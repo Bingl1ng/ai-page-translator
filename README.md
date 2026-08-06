@@ -1,5 +1,7 @@
 # AI 页面翻译（AI Page Translator）
 
+[English](README.en.md) · 中文
+
 > 用 AI 把整个网页翻译成你选择的语言。
 > 由 **DeepSeek** 大模型驱动，需要自备 DeepSeek API Key。
 
