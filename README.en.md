@@ -45,7 +45,7 @@ A browser extension (Manifest V3) for **Edge / Chrome**. Translations see full-p
 **Option 2: Clone for development**
 
 ```bash
-git clone https://github.com/bingl1ng/ai-page-translator
+git clone https://github.com/Bingl1ng/ai-page-translator
 # No build step needed — the extension/ folder is directly loadable
 ```
 

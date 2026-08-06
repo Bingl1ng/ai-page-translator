@@ -45,7 +45,7 @@
 **方式二：本地构建（开发者）**
 
 ```bash
-git clone https://github.com/bingl1ng/ai-page-translator
+git clone https://github.com/Bingl1ng/ai-page-translator
 # 无需任何构建步骤，extension/ 目录本身就是可直接加载的扩展
 ```
 
