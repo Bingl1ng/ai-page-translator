@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="color-scheme" content="light dark">
+  <title>AI 页面翻译 - 设置</title>
+  <style>
+    body { font-family: system-ui, "Segoe UI", Roboto, "Microsoft YaHei", sans-serif; font-size: 14px; color: #202124; max-width: 520px; margin: 32px auto; padding: 0 20px; background: #fff; }
+    h1 { font-size: 20px; }
+    .field { margin-bottom: 18px; }
+    label { display: block; font-weight: 600; margin-bottom: 6px; }
+    input, select { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #c9cdd4; border-radius: 8px; font: inherit; }
+    input:focus, select:focus { outline: 2px solid #1a73e8; border-color: transparent; }
+    .note { font-size: 12px; color: #5f6368; margin-top: 4px; }
+    .actions { display: flex; gap: 10px; align-items: center; margin-top: 22px; }
+    button { padding: 9px 18px; border-radius: 8px; border: none; font: inherit; cursor: pointer; }
+    .primary { background: #1a73e8; color: #fff; }
+    .primary:hover { background: #1765cc; }
+    .secondary { background: #f1f3f4; color: #202124; }
+    .secondary:hover { background: #e8eaed; }
+    #result { margin-top: 12px; font-size: 13px; }
+    #result.ok { color: #188038; }
+    #result.err { color: #d93025; }
+    .box { background: #f8f9fb; border: 1px solid #e0e3e8; border-radius: 8px; padding: 12px 14px; font-size: 12.5px; color: #3c4043; line-height: 1.7; margin-top: 26px; }
+    .site-list { list-style: none; padding: 0; margin: 8px 0; }
+    .site-list li { display: flex; align-items: center; gap: 14px; padding: 7px 10px; border: 1px solid #e0e3e8; border-radius: 6px; margin-bottom: 6px; font-size: 13px; }
+    .site-list .host { flex: 1; word-break: break-all; }
+    .site-list label { display: inline-flex; align-items: center; gap: 4px; font-weight: normal; margin: 0; font-size: 12px; cursor: pointer; }
+    .site-list input[type=checkbox] { width: auto; margin: 0; }
+    .site-list .del { cursor: pointer; color: #d93025; background: none; border: none; font-size: 13px; padding: 2px 8px; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #202124; color: #e8eaed; }
+      input, select { background: #292a2d; border-color: #5f6368; color: #e8eaed; }
+      .note { color: #9aa0a6; }
+      .secondary { background: #3c4043; color: #e8eaed; }
+      .secondary:hover { background: #4a4d51; }
+      .box { background: #292a2d; border-color: #3c4043; color: #d2d4d7; }
+      .site-list li { border-color: #3c4043; }
+      .site-list .del { color: #f28b82; }
+      #result.ok { color: #81c995; }
+      #result.err { color: #f28b82; }
+    }
+  </style>
+</head>
+<body>
+  <h1>AI 页面翻译 · 设置</h1>
+
+  <div class="field">
+    <label for="baseUrl">API 地址（OpenAI 兼容端点根）</label>
+    <input id="baseUrl" placeholder="https://api.deepseek.com">
+    <div class="note">支持任何 OpenAI 兼容 API。默认 DeepSeek，接口为 /chat/completions。⚠️ 改用其他域名时，你的 API Key 会随请求发送给该域名，请只填你信任的服务商。</div>
+  </div>
+
+  <div class="field">
+    <label for="apiKey">API Key</label>
+    <input id="apiKey" type="password" placeholder="sk-…" autocomplete="off">
+    <div class="note">只保存在本机浏览器（storage.local），不会写入扩展代码或上传。建议为此扩展单独创建一个专用 Key，并在控制台设置额度上限，泄漏可随时吊销。</div>
+  </div>
+
+  <div class="field">
+    <label for="model">模型</label>
+    <input id="model" placeholder="deepseek-chat">
+    <div class="note">默认 deepseek-v4-flash（已自动关闭思考模式，稳定且快）。如有特殊需求可改为其它 DeepSeek 模型。</div>
+  </div>
+
+  <div class="field">
+    <label for="targetLang">默认目标语言</label>
+    <select id="targetLang"></select>
+  </div>
+
+  <button class="secondary" id="testBtn">测试连接</button>
+
+  <div class="actions" id="actionBar" style="display:none">
+    <button class="primary" id="saveBtn">保存</button>
+    <button class="secondary" id="cancelBtn">取消</button>
+    <span id="saved" style="color:#188038;display:none">✓ 已保存</span>
+  </div>
+  <div id="result"></div>
+
+  <div class="field">
+    <h2 style="font-size:16px;margin:26px 0 10px;">站点设置</h2>
+    <div style="display:flex;gap:8px;margin-bottom:10px;">
+      <input id="newSite" placeholder="example.com" style="flex:1">
+      <button class="secondary" id="addSiteBtn">添加</button>
+    </div>
+    <ul id="siteList" class="site-list"></ul>
+    <div class="note">给指定域名设置"自动翻译"或"永不翻译"，优先级高于全局设置；子域名自动匹配上级域名。</div>
+  </div>
+
+  <div class="box">
+    <b>说明</b><br>
+    · 翻译调用你填的 API，按你的账户计费。DeepSeek 很便宜，普通网页一次约几分钱。<br>
+    · 若把 API 地址改成非 DeepSeek 域名，保存时会弹出授权请求，允许后即可调用。<br>
+    · 弹窗与横幅里切换"目标语言"会实时生效；已翻译页面切语言会自动重翻。<br>
+    · 代码块、输入框、按钮内的文字默认不翻译。
+  </div>
+
+  <script src="config.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

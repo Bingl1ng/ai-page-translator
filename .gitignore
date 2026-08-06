@@ -1,0 +1,21 @@
+# ===== 测试与开发 =====
+test/
+
+# 无头测试用浏览器 profile（含缓存的本地存储，可能含测试 key）
+profile-*/
+aitr-*-profile*/
+
+# ===== 敏感文件 =====
+*.key
+*key.txt
+*.pem
+
+# ===== 系统 / 编辑器 =====
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# ===== 发布产物（zip 走 GitHub Releases 分发，不入库） =====
+dist/
