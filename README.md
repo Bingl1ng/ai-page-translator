@@ -34,7 +34,7 @@
 
 1. 下载 [Releases](../../releases) 里的 `ai-page-translator-v1.5.5.zip`，解压
 2. 打开 `edge://extensions`（Chrome 为 `chrome://extensions`）
-3. 打开右上角 **"开发人员模式"**
+3. 打开左下角 **"开发人员模式"**
 4. 点击 **"加载解压缩的扩展"**，选择解压出来的 `extension` 目录
 5. 点击扩展图标 → **设置** → 填入你的 DeepSeek API Key → **测试连接**
 
