@@ -18,7 +18,7 @@ A browser extension (Manifest V3) for **Edge / Chrome**. Translations see full-p
 | **Auto-retry on failure** | Transient API errors auto-retry; any remaining failures can be retried in one click |
 | **Restore after restart** | Translated pages can be restored to the original text even after an extension update / reload |
 | **Real-time progress** | Node-level progress bar in the banner + toolbar badge, cancellable anytime |
-| **Usage statistics** | Tracks monthly **real token** usage and estimated cost |
+| **Usage statistics** | Tracks **today/month** real token usage, and computes **real cost** at the latest official price × peak/off-peak |
 | **Multi-language** | 11 target languages supported |
 | **Dark mode** | Banner / popup / options adapt to the system dark mode |
 | **Per-site settings** | Set "always translate" / "never translate" per site, overriding the global setting |
@@ -67,9 +67,9 @@ git clone https://github.com/Bingl1ng/ai-page-translator
 
 ## Cost
 
-- Uses **your own DeepSeek API quota**, billed per token (DeepSeek is cheap).
-- View monthly real token usage (input / output) and estimated cost in the settings page / popup.
-- Translating a full arXiv paper (~80k characters) costs a few cents.
+- Uses **your own DeepSeek API quota**, billed per token (DeepSeek is cheap, with **half-price off-peak hours** — peak is Mon–Fri 9:00–12:00 & 14:00–18:00; the rest of the time and weekends are discounted).
+- Popup shows **today / this-month / this-page real cost (CNY)** computed from **latest official price × peak/off-peak**, separating input cache-hit / miss / output — a measured true value, not an estimate.
+- Translating a full arXiv paper (~80k characters) costs a few cents (usually under ¥0.01 off-peak).
 
 ## Project Structure
 

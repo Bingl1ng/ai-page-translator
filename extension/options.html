@@ -3,16 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="color-scheme" content="light dark">
-  <title>AI 页面翻译 - 设置</title>
+  <title data-i18n="opt.title">AI 页面翻译 · 设置</title>
   <style>
     body { font-family: system-ui, "Segoe UI", Roboto, "Microsoft YaHei", sans-serif; font-size: 14px; color: #202124; max-width: 520px; margin: 32px auto; padding: 0 20px; background: #fff; }
-    h1 { font-size: 20px; }
-    .field { margin-bottom: 18px; }
+    h1 { font-size: 16px; }
+    h2.section { font-size: 12px; font-weight: 600; color: #5f6368; letter-spacing: .5px; margin: 26px 0 12px; }
+    .field { margin-bottom: 16px; }
     label { display: block; font-weight: 600; margin-bottom: 6px; }
     input, select { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #c9cdd4; border-radius: 8px; font: inherit; }
     input:focus, select:focus { outline: 2px solid #1a73e8; border-color: transparent; }
-    .note { font-size: 12px; color: #5f6368; margin-top: 4px; }
-    .actions { display: flex; gap: 10px; align-items: center; margin-top: 22px; }
+    .note { font-size: 12px; color: #5f6368; margin-top: 4px; line-height: 1.6; }
+    .actions { display: flex; gap: 10px; align-items: center; margin-top: 20px; }
     button { padding: 9px 18px; border-radius: 8px; border: none; font: inherit; cursor: pointer; }
     .primary { background: #1a73e8; color: #fff; }
     .primary:hover { background: #1765cc; }
@@ -30,6 +31,8 @@
     .site-list .del { cursor: pointer; color: #d93025; background: none; border: none; font-size: 13px; padding: 2px 8px; }
     @media (prefers-color-scheme: dark) {
       body { background: #202124; color: #e8eaed; }
+      h1 { color: #e8eaed; }
+      h2.section { color: #9aa0a6; }
       input, select { background: #292a2d; border-color: #5f6368; color: #e8eaed; }
       .note { color: #9aa0a6; }
       .secondary { background: #3c4043; color: #e8eaed; }
@@ -43,56 +46,61 @@
   </style>
 </head>
 <body>
-  <h1>AI 页面翻译 · 设置</h1>
+  <h1 data-i18n="opt.title">AI 页面翻译 · 设置</h1>
 
+  <h2 class="section" data-i18n="opt.section.api">API 连接</h2>
   <div class="field">
-    <label for="baseUrl">API 地址（OpenAI 兼容端点根）</label>
+    <label for="baseUrl" data-i18n="opt.baseUrl.label">API 地址（OpenAI 兼容端点根）</label>
     <input id="baseUrl" placeholder="https://api.deepseek.com">
-    <div class="note">支持任何 OpenAI 兼容 API。默认 DeepSeek，接口为 /chat/completions。⚠️ 改用其他域名时，你的 API Key 会随请求发送给该域名，请只填你信任的服务商。</div>
+    <div class="note" data-i18n="opt.baseUrl.note">支持任何 OpenAI 兼容 API。⚠️ 改非 DeepSeek 域名时，Key 会随请求发给该域名，只填可信服务商。</div>
   </div>
-
   <div class="field">
-    <label for="apiKey">API Key</label>
+    <label for="apiKey" data-i18n="opt.apiKey.label">API Key</label>
     <input id="apiKey" type="password" placeholder="sk-…" autocomplete="off">
-    <div class="note">只保存在本机浏览器（storage.local），不会写入扩展代码或上传。建议为此扩展单独创建一个专用 Key，并在控制台设置额度上限，泄漏可随时吊销。</div>
+    <div class="note" data-i18n="opt.apiKey.note">只存本机浏览器。建议建专用 Key + 设置额度上限，泄漏可随时吊销。</div>
   </div>
-
   <div class="field">
-    <label for="model">模型</label>
+    <label for="model" data-i18n="opt.model.label">模型</label>
     <input id="model" placeholder="deepseek-chat">
-    <div class="note">默认 deepseek-v4-flash（已自动关闭思考模式，稳定且快）。如有特殊需求可改为其它 DeepSeek 模型。</div>
+    <div class="note" data-i18n="opt.model.note">默认 deepseek-v4-flash（已自动关思考模式，快且稳）。</div>
   </div>
 
+  <h2 class="section" data-i18n="opt.section.pref">翻译偏好</h2>
   <div class="field">
-    <label for="targetLang">默认目标语言</label>
+    <label for="targetLang" data-i18n="opt.targetLang.label">默认目标语言</label>
     <select id="targetLang"></select>
   </div>
 
-  <button class="secondary" id="testBtn">测试连接</button>
+  <h2 class="section" data-i18n="opt.section.ui">界面语言</h2>
+  <div class="field">
+    <label for="displayLang" data-i18n="opt.displayLang.label">显示语言（插件界面文字）</label>
+    <select id="displayLang"></select>
+    <div class="note" data-i18n="opt.displayLang.note">切换插件按钮、说明、横幅等文字的语言，不影响翻译目标。</div>
+  </div>
+
+  <button class="secondary" id="testBtn" data-i18n="opt.test">测试连接</button>
 
   <div class="actions" id="actionBar" style="display:none">
-    <button class="primary" id="saveBtn">保存</button>
-    <button class="secondary" id="cancelBtn">取消</button>
-    <span id="saved" style="color:#188038;display:none">✓ 已保存</span>
+    <button class="primary" id="saveBtn" data-i18n="opt.save">保存</button>
+    <button class="secondary" id="cancelBtn" data-i18n="opt.cancel">取消</button>
+    <span id="saved" style="color:#188038;display:none" data-i18n="opt.saved">✓ 已保存</span>
   </div>
   <div id="result"></div>
 
-  <div class="field">
-    <h2 style="font-size:16px;margin:26px 0 10px;">站点设置</h2>
-    <div style="display:flex;gap:8px;margin-bottom:10px;">
-      <input id="newSite" placeholder="example.com" style="flex:1">
-      <button class="secondary" id="addSiteBtn">添加</button>
-    </div>
-    <ul id="siteList" class="site-list"></ul>
-    <div class="note">给指定域名设置"自动翻译"或"永不翻译"，优先级高于全局设置；子域名自动匹配上级域名。</div>
+  <h2 class="section" data-i18n="opt.section.site">站点设置</h2>
+  <div style="display:flex;gap:8px;margin-bottom:10px;">
+    <input id="newSite" placeholder="example.com" data-i18n-ph="opt.site.addPh" style="flex:1">
+    <button class="secondary" id="addSiteBtn" data-i18n="opt.site.add">添加</button>
   </div>
+  <ul id="siteList" class="site-list"></ul>
+  <div class="note" data-i18n="opt.site.note">给指定域名设置"自动翻译/永不翻译"，优先级高于全局；子域名自动匹配上级。</div>
 
   <div class="box">
-    <b>说明</b><br>
-    · 翻译调用你填的 API，按你的账户计费。DeepSeek 很便宜，普通网页一次约几分钱。<br>
-    · 若把 API 地址改成非 DeepSeek 域名，保存时会弹出授权请求，允许后即可调用。<br>
-    · 弹窗与横幅里切换"目标语言"会实时生效；已翻译页面切语言会自动重翻。<br>
-    · 代码块、输入框、按钮内的文字默认不翻译。
+    <b data-i18n="opt.help.title">说明</b><br>
+    <span data-i18n="opt.help.1">· 翻译调用你填的 API，按你的账户计费。DeepSeek 很便宜，普通网页一次约几分钱。</span><br>
+    <span data-i18n="opt.help.2">· 非 DeepSeek 域名保存时会弹授权请求。</span><br>
+    <span data-i18n="opt.help.3">· 弹窗/横幅切"目标语言"实时生效；已翻页切语言自动重翻。</span><br>
+    <span data-i18n="opt.help.4">· 代码块、输入框、按钮内文字默认不翻译。</span>
   </div>
 
   <script src="config.js"></script>

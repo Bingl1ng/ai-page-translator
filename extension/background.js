@@ -12,7 +12,8 @@ function getConfig() {
 // 串行化：并发批次（MAX_CONCURRENT=8）同时完成时，read-modify-write 会相互覆盖丢统计。
 // 用 promise 链排队，保证每次 get→改→set 原子执行。
 let usageQueue = Promise.resolve();
-function recordUsage(inTokens, outTokens) {
+// t={in,out,hit,miss}(token 数)，cost 用真实单价按模型+峰谷算出，按天聚合(与 popup 本地月份一致)
+function recordUsage(model, t, peak) {
   usageQueue = usageQueue.then(function () {
     return new Promise(function (resolve) {
       chrome.storage.local.get(AITR.USAGE_KEY, function (obj) {
@@ -20,9 +21,12 @@ function recordUsage(inTokens, outTokens) {
         // 用本地日期（与 popup 本地月份聚合一致；toISOString 是 UTC，会错位少算）
         const now = new Date();
         const today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
-        const d = u.byDay[today] || { in: 0, out: 0 };
-        d.in += (inTokens || 0);
-        d.out += (outTokens || 0);
+        const d = u.byDay[today] || { in: 0, out: 0, hit: 0, miss: 0, cost: 0 };
+        d.in += (t.in || 0);
+        d.out += (t.out || 0);
+        d.hit += (t.hit || 0);
+        d.miss += (t.miss || 0);
+        d.cost += AITR.computeCost(model, t, peak);
         u.byDay[today] = d;
         const keys = Object.keys(u.byDay).sort();
         while (keys.length > 62) delete u.byDay[keys.shift()];
@@ -32,6 +36,23 @@ function recordUsage(inTokens, outTokens) {
       });
     });
   });
+}
+
+// 从 API 响应的 usage 提取 {in,hit,miss,out} token。DeepSeek 用 prompt_cache_hit/miss_tokens 区分缓存；
+// 缺缓存字段时全当 miss（保守：不误按"命中价"少算）。fallback*Chars 是缺 usage 时的字符估算法入场。
+function usageFromData(data, fallbackInChars, fallbackOutChars) {
+  const u = (data && data.usage) || {};
+  let inT = 0, outT = 0;
+  if (typeof u.prompt_tokens === 'number') {
+    inT = u.prompt_tokens;
+  } else {
+    inT = Math.round((fallbackInChars || 0) / 1.7);
+  }
+  let hit = (typeof u.prompt_cache_hit_tokens === 'number') ? u.prompt_cache_hit_tokens : 0;
+  if (hit > inT) hit = inT;
+  const miss = Math.max(0, inT - hit);
+  outT = (typeof u.completion_tokens === 'number') ? u.completion_tokens : Math.round((fallbackOutChars || 0) / 1.7);
+  return { in: inT, out: outT, hit: hit, miss: miss };
 }
 
 // ---- JSON 宽容解析 ----
@@ -133,6 +154,7 @@ async function translateBatch(texts, target, direction, countUsage, cfgOverride,
 
   // 单次尝试。perfect=true 完全成功；数量不匹配返回非 perfect 尽量对齐；解析失败/网络错抛异常
   async function attemptOnce() {
+    let lastCost = 0; // 本批真实成本(元)，随返回带给 content,供"本次花费"显示
     const payload = {
       model: cfg.model,
       messages: [
@@ -167,13 +189,12 @@ async function translateBatch(texts, target, direction, countUsage, cfgOverride,
       if (!content) throw new Error('响应中没有 content 字段');
       const arr = parseTranslations(content);
       if (!arr) throw new Error('响应不是 {"translations":[...]} 结构');
-      // 用量统计：优先 API usage 真实 token，缺则回退字符估算（deepseek 不记测试请求）
+      // 用量统计：优先 API usage 真实 token（含缓存命中/未命中分项），缺则回退字符估算
       if (countUsage !== false) {
-        const inT = (data && data.usage && typeof data.usage.prompt_tokens === 'number')
-          ? data.usage.prompt_tokens : Math.round(texts.join('').length / 1.7);
-        const outT = (data && data.usage && typeof data.usage.completion_tokens === 'number')
-          ? data.usage.completion_tokens : Math.round(arr.filter(function (s) { return typeof s === 'string'; }).join('').length / 1.7);
-        recordUsage(inT, outT);
+        const utok = usageFromData(data, texts.join('').length, arr.filter(function (s) { return typeof s === 'string'; }).join('').length);
+        const peak = AITR.isPeak();
+        lastCost = AITR.computeCost(cfg.model, utok, peak);
+        recordUsage(cfg.model, utok, peak);
       }
       if (arr.length !== texts.length) {
         // 数量不匹配：能对多少对多少，其余用原文兜底，并记录失败 index 供重试
@@ -186,6 +207,7 @@ async function translateBatch(texts, target, direction, countUsage, cfgOverride,
         return {
           translated: padded, errors: failed.length, failed: failed,
           usable: texts.length - failed.length,
+          cost: lastCost,
           perfect: failed.length === 0,
           message: failed.length ? '返回数量不匹配(' + arr.length + '/' + texts.length + ')，已兜底' : ''
         };
@@ -199,6 +221,7 @@ async function translateBatch(texts, target, direction, countUsage, cfgOverride,
         errors: bad.length,
         failed: bad,
         usable: texts.length - bad.length,
+        cost: lastCost,
         perfect: bad.length === 0,
         message: bad.length ? '个别条目非字符串，已兜底原文' : ''
       };
@@ -217,7 +240,7 @@ async function translateBatch(texts, target, direction, countUsage, cfgOverride,
       if (r.perfect) return r;
       if (!best || best.usable === 0) best = r; // 保留首个有可用译文的结果（partial 优先于整批失败）
     } catch (e) {
-      if (!best) best = { translated: texts.slice(), errors: texts.length, failed: allIndexes(texts.length), usable: 0, perfect: false, message: String(e && e.message || e) };
+      if (!best) best = { translated: texts.slice(), errors: texts.length, failed: allIndexes(texts.length), usable: 0, perfect: false, cost: 0, message: String(e && e.message || e) };
     }
   }
 
@@ -237,6 +260,7 @@ async function translateBatch(texts, target, direction, countUsage, cfgOverride,
     translated: halves[0].translated.concat(halves[1].translated),
     errors: halves[0].errors + halves[1].errors,
     usable: texts.length - halves[0].errors - halves[1].errors,
+    cost: (halves[0].cost || 0) + (halves[1].cost || 0),
     perfect: halves[0].errors + halves[1].errors === 0,
     // 第二半的 index 偏移 half（第一半长度），供 content 定位失败节点
     failed: halves[0].failed.concat(halves[1].failed.map(function (i) { return i + half; })),
@@ -288,11 +312,8 @@ async function getDirection(sample, target) {
     const content = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
     if (typeof content === 'string' && content.trim()) {
       // 方向预读也是真实 API 调用，计入用量（缺 usage 回退字符估算）
-      const inT = (data && data.usage && typeof data.usage.prompt_tokens === 'number')
-        ? data.usage.prompt_tokens : Math.round(sample.join('').length / 1.7);
-      const outT = (data && data.usage && typeof data.usage.completion_tokens === 'number')
-        ? data.usage.completion_tokens : Math.round(content.length / 1.7);
-      recordUsage(inT, outT);
+      const utok = usageFromData(data, sample.join('').length, content.length);
+      recordUsage(cfg.model, utok, AITR.isPeak());
       return content.trim();
     }
     return '';
@@ -338,7 +359,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
   if (msg.type === 'aitr-batch') {
     translateBatch(msg.texts || [], msg.target || AITR.DEFAULTS.targetLang, msg.direction)
       .then(function (r) {
-        sendResponse({ type: 'batchResult', id: msg.id, translated: r.translated, errors: r.errors, failed: r.failed || [], message: r.message });
+        sendResponse({ type: 'batchResult', id: msg.id, translated: r.translated, errors: r.errors, failed: r.failed || [], cost: r.cost || 0, message: r.message });
       });
     return true; // 异步 sendResponse
   }

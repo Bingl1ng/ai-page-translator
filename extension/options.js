@@ -17,14 +17,29 @@ function fillLang() {
   });
 }
 
+function fillDisplayLang() {
+  const sel = $('displayLang');
+  sel.innerHTML = '';
+  AITR.LANGUAGES.forEach(function (l) {
+    const o = document.createElement('option');
+    o.value = l.value;
+    o.textContent = l.label;
+    if (l.value === cfg.displayLang) o.selected = true;
+    sel.appendChild(o);
+  });
+}
+
 function init() {
   AITR.loadConfig().then(function (c) {
     cfg = c;
     savedCfg = Object.assign({}, c);
+    AITR.setDisplayLang(c.displayLang);
     $('baseUrl').value = c.baseUrl;
     $('apiKey').value = c.apiKey;
     $('model').value = c.model;
     fillLang();
+    fillDisplayLang();
+    AITR.applyI18n(document);
     updateDirty();
   });
   renderSites();
@@ -35,6 +50,7 @@ function collect() {
   cfg.apiKey = ($('apiKey').value || '').trim();
   cfg.model = ($('model').value || AITR.DEFAULTS.model).trim();
   cfg.targetLang = $('targetLang').value;
+  cfg.displayLang = $('displayLang').value;
   return cfg;
 }
 
@@ -49,7 +65,8 @@ function updateDirty() {
     normBase($('baseUrl').value) !== normBase(savedCfg.baseUrl) ||
     ($('apiKey').value || '').trim() !== (savedCfg.apiKey || '') ||
     ($('model').value || '').trim() !== (savedCfg.model || '') ||
-    $('targetLang').value !== (savedCfg.targetLang || '');
+    $('targetLang').value !== (savedCfg.targetLang || '') ||
+    $('displayLang').value !== (savedCfg.displayLang || 'zh-CN');
   $('actionBar').style.display = changed ? 'flex' : 'none';
   return changed;
 }
@@ -60,7 +77,10 @@ function cancelEdit() {
   $('apiKey').value = savedCfg.apiKey || '';
   $('model').value = savedCfg.model || '';
   $('targetLang').value = savedCfg.targetLang || '';
+  $('displayLang').value = savedCfg.displayLang || 'zh-CN';
   cfg = Object.assign({}, savedCfg);
+  AITR.setDisplayLang(cfg.displayLang);
+  AITR.applyI18n(document); // 取消恢复界面语言
   $('saved').style.display = 'none';
   updateDirty();
 }
@@ -71,11 +91,7 @@ async function save(showMsg) {
   let baseOrigin = '';
   try { baseOrigin = new URL(cfg.baseUrl).origin; } catch (e) { /* 非法地址交给后续逻辑 */ }
   if (baseOrigin && baseOrigin !== 'https://api.deepseek.com') {
-    const ok = confirm(
-      '你的 API Key 会随翻译请求发送到以下地址：\n\n  ' + baseOrigin + '\n\n' +
-      '请确认你信任该服务商（或确认这是你自己的网关）。\n' +
-      '点「确定」继续保存，点「取消」返回修改。'
-    );
+    const ok = confirm(AITR.t('opt.confirm1', { origin: baseOrigin }));
     if (!ok) { cancelEdit(); return; } // 取消 → 4 个字段整体恢复为已保存值（含 cfg，避免残留变异字段）
   }
   await AITR.saveConfig(cfg);
@@ -120,7 +136,7 @@ function renderSites() {
       autoCb.checked = !!st.auto;
       autoCb.addEventListener('change', function () { saveOne(host, { auto: autoCb.checked, never: neverCb.checked }); });
       autoLabel.appendChild(autoCb);
-      autoLabel.appendChild(document.createTextNode(' 自动'));
+      autoLabel.appendChild(document.createTextNode(AITR.t('opt.site.auto')));
       li.appendChild(autoLabel);
 
       const neverLabel = document.createElement('label');
@@ -129,14 +145,14 @@ function renderSites() {
       neverCb.checked = !!st.never;
       neverCb.addEventListener('change', function () { saveOne(host, { auto: autoCb.checked, never: neverCb.checked }); });
       neverLabel.appendChild(neverCb);
-      neverLabel.appendChild(document.createTextNode(' 永不翻译'));
+      neverLabel.appendChild(document.createTextNode(AITR.t('opt.site.never')));
       li.appendChild(neverLabel);
 
       const del = document.createElement('button');
       del.className = 'del';
-      del.textContent = '删除';
+      del.textContent = AITR.t('opt.site.del');
       del.addEventListener('click', function () {
-        AITR.loadSites().then(function (s) { delete s[host]; AITR.saveSites(s).then(renderSites); });
+        AITR.updateSites(function (s) { delete s[host]; }).then(renderSites);
       });
       li.appendChild(del);
       ul.appendChild(li);
@@ -145,22 +161,20 @@ function renderSites() {
 }
 
 function saveOne(host, st) {
-  AITR.loadSites().then(function (s) {
+  AITR.updateSites(function (s) {
     if (st.auto || st.never) s[host] = { auto: !!st.auto, never: !!st.never };
     else delete s[host];
-    AITR.saveSites(s);
   });
 }
 
 function addSite() {
   const host = $('newSite').value.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
   if (!host) return;
-  AITR.loadSites().then(function (s) {
+  AITR.updateSites(function (s) {
     if (!s[host]) s[host] = { auto: false, never: false };
-    AITR.saveSites(s).then(function () {
-      $('newSite').value = '';
-      renderSites();
-    });
+  }).then(function () {
+    $('newSite').value = '';
+    renderSites();
   });
 }
 
@@ -171,11 +185,16 @@ function initEvents() {
     $(id).addEventListener('input', updateDirty);
   });
   $('targetLang').addEventListener('change', updateDirty);
+  $('displayLang').addEventListener('change', function () {
+    AITR.setDisplayLang($('displayLang').value); // 即时预览界面文字
+    AITR.applyI18n(document);
+    updateDirty(); // 标记待保存
+  });
   $('addSiteBtn').addEventListener('click', addSite);
   $('newSite').addEventListener('keydown', function (e) { if (e.key === 'Enter') addSite(); });
   // 测试连接：用当前输入值直接测，不落盘（改完配置先测通再点保存）
   $('testBtn').addEventListener('click', function () {
-    setResult('正在测试连接…', false);
+    setResult(AITR.t('opt.testing'), false);
     chrome.runtime.sendMessage({
       type: 'aitr-test',
       baseUrl: ($('baseUrl').value || '').trim().replace(/\/+$/, ''),
@@ -183,11 +202,11 @@ function initEvents() {
       model: ($('model').value || '').trim(),
       targetLang: $('targetLang').value
     }, function (resp) {
-      if (chrome.runtime.lastError || !resp) { setResult('测试失败：无法连接后台', true); return; }
+      if (chrome.runtime.lastError || !resp) { setResult(AITR.t('opt.testFailBg'), true); return; }
       if (resp.ok) {
-        setResult('✓ 连接成功。示例译文：「' + resp.translated + '」', false);
+        setResult(AITR.t('opt.testOk2', { t: resp.translated }), false);
       } else {
-        setResult('测试失败：' + (resp.message || '未知错误'), true);
+        setResult(AITR.t('opt.testErr', { msg: resp.message || '?' }), true);
       }
     });
   });

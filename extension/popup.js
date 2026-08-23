@@ -10,38 +10,45 @@ const $ = function (id) { return document.getElementById(id); };
 function init() {
   AITR.loadConfig().then(function (c) {
     cfg = c;
+    AITR.setDisplayLang(c.displayLang);
     fillLang();
+    AITR.applyI18n(document);
     $('auto').checked = !!cfg.autoTranslate;
-    if (!cfg.apiKey) $('nokey').style.display = 'block';
-    else $('nokey').style.display = 'none';
+    const nokey = $('nokey');
+    if (nokey) { nokey.style.display = cfg.apiKey ? 'none' : 'block'; }
     queryTab();
   });
   initUsage();
   bindEvents();
 }
 
-// 本月用量（真实 token，从 aitrUsage 聚合当月）
+// 用量：今日/本月真实金额（后台已按真实单价+峰谷算好 cost），外加 token 数
 function initUsage() {
   AITR.loadUsage().then(function (u) {
     const now = new Date();
-    const ym = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-    let inT = 0, outT = 0;
+    const y = now.getFullYear();
+    const ym = y + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    const today = ym + '-' + String(now.getDate()).padStart(2, '0');
+    let inT = 0, outT = 0, monthCost = 0, todayCost = 0;
     Object.keys(u.byDay || {}).forEach(function (k) {
+      const d = u.byDay[k] || {};
       if (k.indexOf(ym) === 0) {
-        inT += (u.byDay[k].in || 0);
-        outT += (u.byDay[k].out || 0);
+        inT += (d.in || 0); outT += (d.out || 0); monthCost += (d.cost || 0);
       }
+      if (k === today) todayCost += (d.cost || 0);
     });
-    const cost = AITR.estimateCost(inT, outT);
-    $('usageMonth').textContent = AITR.formatCount(inT + outT) + ' token ≈ ' + AITR.USAGE_EST.symbol + cost.toFixed(3);
+    $('usageMonth').textContent = AITR.formatYuan(monthCost, 3) + ' · ' + AITR.formatCount(inT + outT) + ' token';
+    $('usageToday').textContent = todayCost > 0 ? AITR.formatYuan(todayCost, 4) : AITR.t('pop.noUsageToday');
   });
 }
 
-// 本次用量（本页会话累计字符 → 费用估算）
+// 本次用量：优先真实成本（sessionCost,后台按真实 token+单价算），缺则回退字符估算
 function updateUsageNow(m) {
+  const c = m.sessionCost || 0;
+  if (c > 0) { $('usageNow').textContent = AITR.formatYuan(c, 4); return; }
   const inC = m.sessionIn || 0, outC = m.sessionOut || 0;
   const est = AITR.estimateCost(inC / 1.7, outC / 1.7);
-  $('usageNow').textContent = AITR.formatCount(inC + outC) + ' 字符 ≈ ' + AITR.USAGE_EST.symbol + est.toFixed(4);
+  $('usageNow').textContent = AITR.formatCount(inC + outC) + ' 字符 ≈ ' + AITR.formatYuan(est, 4);
 }
 
 function fillLang() {
@@ -76,7 +83,7 @@ function queryTab() {
     }
     chrome.tabs.sendMessage(tabId, { type: 'aitr-status' }, function (resp) {
       if (chrome.runtime.lastError || !resp || !resp.ok) {
-        setStatus('此页面不支持翻译（浏览器内部页面或受限站点）。', true);
+        setStatus(AITR.t('pop.unsupported'), true);
         $('translateBtn').disabled = true;
         $('restoreBtn').disabled = true;
         return;
@@ -86,32 +93,35 @@ function queryTab() {
   });
 }
 
-function reflectStatus(s) {
-  setPopupProgress(s);
-  updateUsageNow(s);
+// 渲染三态（translating/translated/未译）：按钮禁用态 + 状态文字 + 进度清零。
+// 弹窗轮询(reflectStatus)与内容脚本推送(onMessage)共用。
+function renderStatus(s) {
   if (s.translating) {
-    setStatus('翻译中… ' + (s.done || 0) + '/' + (s.total || 0));
+    setStatus(AITR.t('pop.translating', { n: s.done || 0, m: s.total || 0 }));
     $('translateBtn').disabled = true;
     $('retranslateBtn').disabled = true;
     $('retryFailedBtn').style.display = 'none';
     $('restoreBtn').disabled = false;
-    $('pg').textContent = '';
   } else if (s.translated) {
-    setStatus('已翻译成' + (AITR.langLabel(s.target) || '') + (s.errors ? '（' + s.errors + ' 段失败）' : ''));
+    setStatus(AITR.t('pop.done', { lang: AITR.langName(s.target) || '' }) + (s.errors ? AITR.t('pop.failed', { n: s.errors }) : ''));
     $('translateBtn').disabled = false;
     $('retranslateBtn').disabled = false;
     $('retryFailedBtn').style.display = (s.failedCount > 0 && s.hasKey) ? 'block' : 'none';
     $('restoreBtn').disabled = false;
-    $('pg').textContent = '';
   } else {
-    const from = s.detected ? '检测到外文，未翻译' : '';
-    setStatus(from || '此页未翻译');
+    setStatus(s.detected ? AITR.t('pop.detectedForeign') : AITR.t('pop.notTranslated'));
     $('translateBtn').disabled = false;
     $('retranslateBtn').disabled = true;
     $('retryFailedBtn').style.display = 'none';
     $('restoreBtn').disabled = true;
-    $('pg').textContent = '';
   }
+  $('pg').textContent = '';
+}
+
+function reflectStatus(s) {
+  setPopupProgress(s);
+  updateUsageNow(s);
+  renderStatus(s);
 }
 
 function setStatus(text, isErr) {
@@ -136,7 +146,7 @@ function bindEvents() {
   $('translateBtn').addEventListener('click', function () {
     if (!tabId) return;
     chrome.tabs.sendMessage(tabId, { type: 'aitr-translate' }).catch(function () {});
-    setStatus('翻译中…');
+    setStatus(AITR.t('pop.translating', { n: 0, m: 0 }));
   });
   $('restoreBtn').addEventListener('click', function () {
     if (!tabId) return;
@@ -145,7 +155,7 @@ function bindEvents() {
   $('retranslateBtn').addEventListener('click', function () {
     if (!tabId) return;
     chrome.tabs.sendMessage(tabId, { type: 'aitr-retranslate' }).catch(function () {});
-    setStatus('重新翻译中…');
+    setStatus(AITR.t('pop.retranslating'));
   });
   $('retryFailedBtn').addEventListener('click', function () {
     if (!tabId) return;
@@ -163,20 +173,19 @@ function bindEvents() {
   $('siteAuto').addEventListener('change', saveSiteToggle);
   $('siteNever').addEventListener('change', saveSiteToggle);
   function openOptions() { chrome.runtime.openOptionsPage(); }
-  $('openOptions').addEventListener('click', openOptions);
-  $('optionsLink').addEventListener('click', openOptions);
+  const oe = $('openOptions'); if (oe) oe.addEventListener('click', openOptions);
+  const ol = $('optionsLink'); if (ol) ol.addEventListener('click', openOptions);
 }
 
 // 站点开关：写 aitrSites（两关则删除该域记录）
 function saveSiteToggle() {
   if (!currentHost) return;
-  AITR.loadSites().then(function (sites) {
+  AITR.updateSites(function (sites) {
     const s = sites[currentHost] || {};
     s.auto = $('siteAuto').checked;
     s.never = $('siteNever').checked;
     if (s.auto || s.never) sites[currentHost] = s;
     else delete sites[currentHost];
-    AITR.saveSites(sites);
   });
 }
 
@@ -204,25 +213,7 @@ chrome.runtime.onMessage.addListener(function (msg) {
   if (!msg || msg.type !== 'aitr-progress') return;
   setPopupProgress(msg);
   updateUsageNow(msg);
-  if (msg.translating) {
-    setStatus('翻译中… ' + (msg.done || 0) + '/' + (msg.total || 0));
-    $('translateBtn').disabled = true;
-    $('retranslateBtn').disabled = true;
-    $('retryFailedBtn').style.display = 'none';
-    $('restoreBtn').disabled = false;
-  } else if (msg.translated) {
-    setStatus('已翻译成' + (AITR.langLabel(msg.target) || '') + (msg.errors ? '（' + msg.errors + ' 段失败）' : ''));
-    $('translateBtn').disabled = false;
-    $('retranslateBtn').disabled = false;
-    $('retryFailedBtn').style.display = (msg.failedCount > 0 && msg.hasKey) ? 'block' : 'none';
-    $('restoreBtn').disabled = false;
-  } else {
-    setStatus('此页未翻译');
-    $('translateBtn').disabled = false;
-    $('retranslateBtn').disabled = true;
-    $('retryFailedBtn').style.display = 'none';
-    $('restoreBtn').disabled = true;
-  }
+  renderStatus(msg);
 });
 
 document.addEventListener('DOMContentLoaded', init);

@@ -20,10 +20,7 @@
     'ko': ['hangul'],
     'ru': ['cyrillic']
   };
-  const LANG_NAMES = {
-    'zh-CN': '中文', 'zh-TW': '繁体中文', 'en': '英文', 'ja': '日文', 'ko': '韩文',
-    'fr': '法文', 'de': '德文', 'es': '西文', 'ru': '俄文', 'pt': '葡文', 'it': '意文'
-  };
+  /* 语言名已由 AITR.langName() 提供(随显示语言变化),此处不再维护 */
   const MAX_SAMPLE_CHARS = 4000; // 语言检测采样上限
   const BATCH_TIMEOUT = 90000; // 单批最久等待（毫秒）；background 60s 超时后已返回结果，此值兜底 SW 完全无响应
   const MAX_CONCURRENT = 8;            // 大页并发时在途批数上限（实测 DeepSeek 并发 8 仍有 ~7.8 倍加速；慢批占位稀释，取 8 稳）
@@ -45,7 +42,7 @@
       : { items: 40, chars: 2000, fullTextLimit: 8000 };
   }
 
-  let config = { baseUrl: '', apiKey: '', model: '', targetLang: 'zh-CN', autoTranslate: false };
+  let config = { baseUrl: '', apiKey: '', model: '', targetLang: 'zh-CN', autoTranslate: false, displayLang: 'zh-CN' };
 
   // content 不需要真实 API key（翻译请求由 background 持 key 发起），这里抹掉明文：
   // 只保留"有没有 key"（`!!config.apiKey` 用于横幅提示），即使 content 被攻破也没有明文可泄。
@@ -76,7 +73,7 @@
   const skipRetry = new Set();   // 自动重试达上限的永久失败节点（手动"重试失败段落"仍可重试）
   const retryLog = [];           // 自动重试诊断：每轮 {round, before, sent, after}（经 aitr-status 暴露）
   let totalNodes = 0, doneNodes = 0;    // 节点级进度（applyBatch 累计，阶段二进度条用）
-  let sessionInChars = 0, sessionOutChars = 0; // 本页累计用量（重翻/重试/增量均计入，随 status/broadcast 上报）
+  let sessionInChars = 0, sessionOutChars = 0, sessionCost = 0; // 本页累计用量与真实成本（重翻/重试/增量均计入，随 status/broadcast 上报）
 
   // ================= 重载还原持久化（sessionStorage） =================
   // #13：内容脚本重启（扩展重载/更新）后，已译页仍能"显示原文"还原。
@@ -387,6 +384,7 @@
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        if (res && typeof res.cost === 'number') sessionCost += res.cost; // 累计本页真实成本
         resolve(res);
       };
       const timer = setTimeout(function () {
@@ -399,7 +397,7 @@
             const err = chrome.runtime.lastError;
             if (err) { finish({ translated: batch.texts.slice(), errors: batch.texts.length, failed: allIndexes(batch.texts.length), message: '后台错误: ' + err.message }); return; }
             if (!resp || resp.type !== 'batchResult') { finish({ translated: batch.texts.slice(), errors: batch.texts.length, failed: allIndexes(batch.texts.length), message: '后台无响应' }); return; }
-            finish({ translated: resp.translated, errors: resp.errors, failed: resp.failed || [], message: resp.message });
+            finish({ translated: resp.translated, errors: resp.errors, failed: resp.failed || [], cost: resp.cost || 0, message: resp.message });
           }
         );
       } catch (e) {
@@ -454,6 +452,13 @@
     return completed;
   }
 
+  // 清理某节点的失败/重试记录（重试成功或模型原样返回时调用）
+  function clearNodeFailure(node) {
+    if (failedNodes.has(node)) failedNodes.delete(node);
+    if (skipRetry.has(node)) skipRetry.delete(node);
+    if (failedRetries.has(node)) failedRetries.delete(node);
+  }
+
   // ================= 应用 / 还原 =================
   // failedList: number[]（本批失败 index）。失败段保留原文、记入 failedNodes（不进 handled，
   // 保持"失败段可被后续增量/兜底扫描重新采到"的既有行为）。withProgress=true 时累计节点级进度。
@@ -478,9 +483,7 @@
         // （v1.5.2 横幅闪烁暴露；此前一直在静默烧 API 费用）。
         handled.add(node);
         transMap.set(node, t);
-        if (failedNodes.has(node)) failedNodes.delete(node);
-        if (skipRetry.has(node)) skipRetry.delete(node);
-        if (failedRetries.has(node)) failedRetries.delete(node);
+        clearNodeFailure(node);
         if (withProgress) doneNodes++;
         return;
       }
@@ -489,9 +492,7 @@
       persistNode(node, origMap.get(node), t); // #13：写 sessionStorage，内容脚本重启后可还原
       handled.add(node);
       transMap.set(node, t);
-      if (failedNodes.has(node)) failedNodes.delete(node); // 重试成功移除
-      if (skipRetry.has(node)) skipRetry.delete(node);     // 永久失败节点重试成功，移出跳过集
-      if (failedRetries.has(node)) failedRetries.delete(node);
+      clearNodeFailure(node); // 重试成功/永久失败节点移出失败记录
       sessionOutChars += t.length;
       if (withProgress) doneNodes++;
     });
@@ -769,7 +770,7 @@
   function ensureSafetyScan() {
     if (safetyTimer) return;
     safetyTimer = setInterval(function () {
-      if (!translated || translating || applying || document.hidden || translationAborted) return;
+      if (!translated || isBusy() || document.hidden || translationAborted) return;
       flushIncremental();
     }, 4000);
   }
@@ -801,6 +802,8 @@
       '.bar{display:flex;align-items:center;gap:12px;padding:9px 16px;background:#f8f9fb;color:#202124;' +
       'box-shadow:0 2px 8px rgba(0,0,0,.15);border-bottom:1px solid #d9dce1;font-size:13px;line-height:1.4;flex-wrap:wrap;transition:background .25s ease;}' +
       '.txt{flex:1;min-width:160px;}' +
+      '.actions{display:flex;gap:8px;align-items:center;}' +
+      '.cost{display:block;margin-top:8px;font-size:12px;color:#8a8a8a;}' +
       'button{font:inherit;border:1px solid #c9cdd4;background:#fff;color:#1a73e8;border-radius:6px;padding:4px 14px;cursor:pointer;}' +
       'button:hover{background:#f0f4ff;}' +
       'button.primary{background:#1a73e8;border-color:#1a73e8;color:#fff;}' +
@@ -825,6 +828,7 @@
       'button.primary{background:#8ab4f8;border-color:#8ab4f8;color:#202124;}' +
       'button.primary:hover{background:#9cc1f9;}' +
       'button.ghost{color:#9aa0a6;}' +
+      '.cost{color:#9aa0a6;}' +
       '.spinner{border-color:#5f6368;border-top-color:#8ab4f8;}' +
       '.progress{background:#3c4043;}' +
       '.progress-fill{background:#8ab4f8;}' +
@@ -857,13 +861,13 @@
     if (progressWrapEl) progressWrapEl.style.display = (state === 'translating') ? 'block' : 'none';
 
     if (state === 'offer') {
-      const from = LANG_NAMES[detectedLang] || '外文';
-      const to = LANG_NAMES[config.targetLang] || config.targetLang;
-      textEl.textContent = '此页面看起来是' + from + '。要用 AI 翻译成' + to + '吗？';
-      const btn = mkBtn('AI 翻译', 'primary');
+      const from = AITR.langName(detectedLang);
+      const to = AITR.langName(config.targetLang);
+      textEl.textContent = AITR.t('ban.offer', { from: from, to: to });
+      const btn = mkBtn(AITR.t('ban.translate'), 'primary');
       btn.onclick = function () { translatePage(); };
       box.appendChild(btn);
-      const no = mkBtn('不翻译');
+      const no = mkBtn(AITR.t('ban.no'));
       no.onclick = function () { bannerDismissed = true; hideBanner(); };
       box.appendChild(no);
       const x = mkBtn('×', 'ghost');
@@ -879,32 +883,38 @@
       textEl.appendChild(progressEl);
       setProgress(currentBatch, totalBatch, errorCount);
       if (progressWrapEl) { progressWrapEl.style.display = 'block'; updateProgressFill(); }
-      const cancel = mkBtn('取消');
+      const cancel = mkBtn(AITR.t('ban.cancel'));
       cancel.onclick = function () { abortRequested = true; };
       box.appendChild(cancel);
     } else if (state === 'done') {
       if (bannerEl) { bannerEl.classList.remove('aitr-done-pop'); void bannerEl.offsetWidth; bannerEl.classList.add('aitr-done-pop'); }
-      const to = LANG_NAMES[config.targetLang] || config.targetLang;
-      textEl.textContent = '已用 AI 翻译成' + to +
-        (errorCount ? '（' + errorCount + ' 段失败' + (lastErrorMsg ? '：' + lastErrorMsg : '') + '，已保留原文）' : '') + ' ✓';
-      const rev = mkBtn('显示原文');
+      const to = AITR.langName(config.targetLang);
+      textEl.textContent = AITR.t('ban.done', { to: to }) +
+        (errorCount ? AITR.t('ban.failed', { n: errorCount }) + (lastErrorMsg ? '：' + lastErrorMsg : '') : '') + ' ✓';
+      const rev = mkBtn(AITR.t('ban.restore'));
       rev.onclick = function () { restore(); };
       box.appendChild(rev);
-      const again = mkBtn('重新翻译');
+      const again = mkBtn(AITR.t('ban.retranslate'));
       again.onclick = function () { retranslate(); };
       box.appendChild(again);
       if (errorCount > 0) {
-        const retryBtn = mkBtn('重试失败段落');
+        const retryBtn = mkBtn(AITR.t('ban.retryFailed'));
         retryBtn.onclick = function () { retryFailed(); };
         box.appendChild(retryBtn);
       }
       const x = mkBtn('×', 'ghost');
       x.onclick = function () { hideBanner(); };
       box.appendChild(x);
+      if (sessionCost > 0) {
+        const cEl = document.createElement('span');
+        cEl.className = 'cost';
+        cEl.textContent = AITR.t('ban.cost', { n: sessionCost.toFixed(4) });
+        box.appendChild(cEl);
+      }
     } else if (state === 'restored') {
       hideBanner();
     } else if (state === 'nokey') {
-      textEl.textContent = '未配置 AI 翻译的 API Key，请点击扩展图标 → 设置填写。';
+      textEl.textContent = AITR.t('ban.nokey');
       const x = mkBtn('×', 'ghost');
       x.onclick = function () { hideBanner(); };
       box.appendChild(x);
@@ -915,7 +925,7 @@
   function setProgress(done, total, errors) {
     if (progressEl) {
       // total===0 是批次尚未构建的过渡态（含 flash 已停用方向预读的场景，文案中性化）
-      progressEl.textContent = total === 0 ? '正在分析全文…' : '正在用 AI 翻译… ' + done + '/' + total;
+      progressEl.textContent = total === 0 ? AITR.t('ban.analyzing') : AITR.t('ban.translating', { n: done, m: total });
     }
   }
 
@@ -948,6 +958,27 @@
     return b;
   }
 
+  function isBusy() { return translating || applying; }
+  // status/broadcast 共用的状态负载（含 isBusy），供弹窗与角标读取
+  function statusPayload() {
+    return {
+      translated: translated,
+      translating: isBusy(),
+      total: totalBatch,
+      done: currentBatch,
+      errors: errorCount,
+      failedCount: failedNodes.size,
+      totalNodes: totalNodes,
+      doneNodes: doneNodes,
+      sessionIn: sessionInChars,
+      sessionOut: sessionOutChars,
+      sessionCost: sessionCost,
+      detected: detectedLang,
+      target: config.targetLang,
+      hasKey: !!config.apiKey
+    };
+  }
+
   // ================= 与弹窗通信 =================
   chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     if (!msg || !msg.type) return;
@@ -958,40 +989,14 @@
     if (msg.type === 'aitr-retry-failed') { retryFailed(); sendResponse({ ok: true }); return; }
     if (msg.type === 'aitr-hide-banner') { hideBanner(); sendResponse({ ok: true }); return; }
     if (msg.type === 'aitr-status') {
-      sendResponse({
-        ok: true,
-        translated: translated,
-        translating: translating || applying,
-        total: totalBatch,
-        done: currentBatch,
-        errors: errorCount,
-        failedCount: failedNodes.size,
-        totalNodes: totalNodes,
-        doneNodes: doneNodes,
-        sessionIn: sessionInChars,
-        sessionOut: sessionOutChars,
-        detected: detectedLang,
-        target: config.targetLang,
-        bannerShown: bannerShown,
-        hasKey: !!config.apiKey,
-        retryLog: retryLog.slice(-30)
-      });
+      sendResponse(Object.assign({ ok: true, bannerShown: bannerShown, retryLog: retryLog.slice(-30) }, statusPayload()));
       return;
     }
   });
 
   function broadcast() {
     try {
-      chrome.runtime.sendMessage({
-        type: 'aitr-progress',
-        state: bannerShown ? ((translating || applying) ? 'translating' : translated ? 'done' : 'offer') : 'hidden',
-        translated: translated,
-        translating: translating || applying,
-        total: totalBatch, done: currentBatch, errors: errorCount,
-        totalNodes: totalNodes, doneNodes: doneNodes, failedCount: failedNodes.size,
-        sessionIn: sessionInChars, sessionOut: sessionOutChars,
-        detected: detectedLang, target: config.targetLang, hasKey: !!config.apiKey
-      });
+      chrome.runtime.sendMessage(Object.assign({ type: 'aitr-progress', state: bannerShown ? (isBusy() ? 'translating' : translated ? 'done' : 'offer') : 'hidden' }, statusPayload()));
     } catch (e) { /* 弹窗未开时忽略 */ }
   }
 
@@ -1015,6 +1020,7 @@
     }
     if (!changes.aitrConfig) return;
     config = redactConfig(Object.assign({}, AITR.DEFAULTS, changes.aitrConfig.newValue || {}));
+    AITR.setDisplayLang(config.displayLang);
     if (config.autoTranslate && !translated && !translating && !bannerShown) {
       const foreign = detectForeign();
       if (foreign) translatePage();
@@ -1024,6 +1030,7 @@
   function init() {
     AITR.loadConfig().then(function (cfg) {
       config = redactConfig(cfg);
+      AITR.setDisplayLang(config.displayLang);
       AITR.loadSites().then(function (sites) {
         siteConfig = AITR.matchSite(sites, location.hostname);
         if (!document.body) {
