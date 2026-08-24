@@ -29,6 +29,24 @@ function fillDisplayLang() {
   });
 }
 
+// 分段胶囊：译文显示模式（replace/bilingual）
+function segMode() {
+  const a = document.querySelector('#displayModeSeg .seg-btn.is-active');
+  return a ? a.getAttribute('data-mode') : 'replace';
+}
+function setSegMode(mode) {
+  document.querySelectorAll('#displayModeSeg .seg-btn').forEach(function (b) {
+    const act = b.getAttribute('data-mode') === (mode || 'replace');
+    b.classList.toggle('is-active', act);
+    b.setAttribute('aria-checked', act ? 'true' : 'false');
+  });
+}
+function bindSeg() {
+  document.querySelectorAll('#displayModeSeg .seg-btn').forEach(function (b) {
+    b.addEventListener('click', function () { setSegMode(b.getAttribute('data-mode')); updateDirty(); });
+  });
+}
+
 function init() {
   AITR.loadConfig().then(function (c) {
     cfg = c;
@@ -39,6 +57,8 @@ function init() {
     $('model').value = c.model;
     fillLang();
     fillDisplayLang();
+    setSegMode(c.displayMode || 'replace');
+    bindSeg();
     AITR.applyI18n(document);
     updateDirty();
   });
@@ -51,6 +71,7 @@ function collect() {
   cfg.model = ($('model').value || AITR.DEFAULTS.model).trim();
   cfg.targetLang = $('targetLang').value;
   cfg.displayLang = $('displayLang').value;
+  cfg.displayMode = segMode();
   return cfg;
 }
 
@@ -66,7 +87,8 @@ function updateDirty() {
     ($('apiKey').value || '').trim() !== (savedCfg.apiKey || '') ||
     ($('model').value || '').trim() !== (savedCfg.model || '') ||
     $('targetLang').value !== (savedCfg.targetLang || '') ||
-    $('displayLang').value !== (savedCfg.displayLang || 'zh-CN');
+    $('displayLang').value !== (savedCfg.displayLang || 'zh-CN') ||
+    segMode() !== (savedCfg.displayMode || 'replace');
   $('actionBar').style.display = changed ? 'flex' : 'none';
   return changed;
 }
@@ -78,6 +100,7 @@ function cancelEdit() {
   $('model').value = savedCfg.model || '';
   $('targetLang').value = savedCfg.targetLang || '';
   $('displayLang').value = savedCfg.displayLang || 'zh-CN';
+  setSegMode(savedCfg.displayMode || 'replace');
   cfg = Object.assign({}, savedCfg);
   AITR.setDisplayLang(cfg.displayLang);
   AITR.applyI18n(document); // 取消恢复界面语言

@@ -4,8 +4,29 @@
 let cfg = Object.assign({}, AITR.DEFAULTS);
 let tabId = null;
 let currentHost = ''; // 当前活动 tab 的 hostname（站点设置用）
+let pendingReapply = false;   // A6b：翻译进行中切了目标语言/显示模式 → 完成后补一次重翻
+let langOrModeChanged = false; // A6a：仅目标语言/显示模式真正变化才重翻
 
 const $ = function (id) { return document.getElementById(id); };
+
+// 分段胶囊：译文显示模式（replace/bilingual）
+function setPopupSeg(mode) {
+  document.querySelectorAll('#modeSeg .seg-btn').forEach(function (b) {
+    const act = b.getAttribute('data-mode') === (mode || 'replace');
+    b.classList.toggle('is-active', act);
+    b.setAttribute('aria-checked', act ? 'true' : 'false');
+  });
+}
+function bindPopupSeg() {
+  document.querySelectorAll('#modeSeg .seg-btn').forEach(function (b) {
+    b.addEventListener('click', function () {
+      const mode = b.getAttribute('data-mode');
+      setPopupSeg(mode);
+      cfg.displayMode = mode;
+      saveAndApply();
+    });
+  });
+}
 
 function init() {
   AITR.loadConfig().then(function (c) {
@@ -14,12 +35,14 @@ function init() {
     fillLang();
     AITR.applyI18n(document);
     $('auto').checked = !!cfg.autoTranslate;
+    setPopupSeg(c.displayMode || 'replace');
     const nokey = $('nokey');
     if (nokey) { nokey.style.display = cfg.apiKey ? 'none' : 'block'; }
     queryTab();
   });
   initUsage();
   bindEvents();
+  bindPopupSeg();
 }
 
 // 用量：今日/本月真实金额（后台已按真实单价+峰谷算好 cost），外加 token 数
@@ -192,9 +215,12 @@ function saveSiteToggle() {
 function saveAndApply() {
   // 以最新存储为基准合并，只覆盖本弹窗改动的字段，避免用陈旧快照覆盖别处（options/另一弹窗）的修改
   AITR.loadConfig().then(function (cur) {
+    // A6a：仅"目标语言 / 显示模式"真正变化才需重翻（切"自动翻译"等不影响已译页，避免误重翻闪+费）
+    langOrModeChanged = (cur.targetLang !== cfg.targetLang) ||
+      ((cur.displayMode || 'replace') !== (cfg.displayMode || 'replace'));
     return AITR.saveConfig(Object.assign({}, cur, cfg));
   }).then(function () {
-    // 语言变了且页面已翻译 → 还原后按新语言重翻
+    if (!langOrModeChanged) return;
     if (!tabId) return;
     chrome.tabs.sendMessage(tabId, { type: 'aitr-status' }, function (resp) {
       if (chrome.runtime.lastError || !resp || !resp.ok) return;
@@ -203,6 +229,9 @@ function saveAndApply() {
         setTimeout(function () {
           chrome.tabs.sendMessage(tabId, { type: 'aitr-translate' }).catch(function () {});
         }, 150);
+      } else if (resp.translating) {
+        // A6b：翻译进行中切了语言/模式 → 记下待办，完成后补一次重翻
+        pendingReapply = true;
       }
     });
   });
@@ -214,6 +243,15 @@ chrome.runtime.onMessage.addListener(function (msg) {
   setPopupProgress(msg);
   updateUsageNow(msg);
   renderStatus(msg);
+  // A6b：翻译完成且有待办重翻（中途切了语言/模式）→ 还原后补翻一次
+  if (pendingReapply && msg.translating === false && msg.translated) {
+    pendingReapply = false;
+    if (!tabId) return;
+    chrome.tabs.sendMessage(tabId, { type: 'aitr-restore' }).catch(function () {});
+    setTimeout(function () {
+      chrome.tabs.sendMessage(tabId, { type: 'aitr-translate' }).catch(function () {});
+    }, 150);
+  }
 });
 
 document.addEventListener('DOMContentLoaded', init);

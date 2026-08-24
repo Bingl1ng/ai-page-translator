@@ -35,7 +35,7 @@ function recordUsage(model, t, peak) {
         chrome.storage.local.set(o, resolve);
       });
     });
-  });
+  }).catch(function () {}); // A4：记账失败不阻塞后续记账/翻译（原链接若某次 set 报错会永久毒化整条链）
 }
 
 // 从 API 响应的 usage 提取 {in,hit,miss,out} token。DeepSeek 用 prompt_cache_hit/miss_tokens 区分缓存；
@@ -108,7 +108,7 @@ function parseTranslations(content) {
     const limit = Math.min(maxTrim, Math.max(0, base.length - 2));
     for (let cut = 1; cut <= limit; cut++) {
       const r2 = parseExact(base.slice(0, base.length - cut));
-      if (++attempts >= MAX_PARSE_ATTEMPTS) return null;
+      if (++attempts > MAX_PARSE_ATTEMPTS) return null; // A3：>=32 会丢弃第 32 次合法解析，改 >
       if (r2) return r2;
     }
   }
@@ -126,10 +126,21 @@ function allIndexes(n) {
   return a;
 }
 
+// A5：过滤 cfgOverride 里的 undefined/null（保留空串 ''，如测试连接故意传假 key 触发 401），
+// 防止 baseUrl/model 被覆写成 undefined 导致 cfg.baseUrl.replace 抛出、content 超时"后台无响应"
+function compactObj(o) {
+  const r = {};
+  if (!o) return r;
+  for (const k in o) {
+    if (o[k] !== undefined && o[k] !== null) r[k] = o[k];
+  }
+  return r;
+}
+
 async function translateBatch(texts, target, direction, countUsage, cfgOverride, depth) {
   // cfgOverride：临时配置覆盖（如设置页"测试连接"用当前输入值测，不落盘）
   // depth：递归切分深度（内部参数，防 API 故障时递归风暴）
-  const cfg = Object.assign({}, await getConfig(), cfgOverride || {});
+  const cfg = Object.assign({}, await getConfig(), compactObj(cfgOverride));
   if (!cfg.apiKey) {
     return { translated: texts.slice(), errors: texts.length, failed: allIndexes(texts.length), message: '未配置 API Key，请到选项页填写' };
   }
@@ -233,16 +244,19 @@ async function translateBatch(texts, target, direction, countUsage, cfgOverride,
   // 全量尝试两次（服务端偶发错误 / 偶发坏 JSON / 数量不匹配）。模式 B：
   // 部分成功（count mismatch 但 usable>0）不立即返回，多试一次争取 clean 覆盖（防中间合并的静默错位）；
   // 但两次都不 clean 时接受 partial 立即返回，不再对半切分（砍掉最贵的递归）。
-  let best = null;
+  let best = null, totalCost = 0; // totalCost：累加本轮所有 API 调用成本（重试/切分时 content 计费不低估，A1）
   for (let k = 0; k < 2; k++) {
     try {
       const r = await attemptOnce();
-      if (r.perfect) return r;
-      if (!best || best.usable === 0) best = r; // 保留首个有可用译文的结果（partial 优先于整批失败）
+      totalCost += (r.cost || 0);
+      if (r.perfect) { r.cost = totalCost; return r; }
+      // A2：保留"可用更多"那次（避免丢弃更好的 partial 重试）；仍不合并，防静默错位
+      if (!best || r.usable > best.usable) best = r;
     } catch (e) {
       if (!best) best = { translated: texts.slice(), errors: texts.length, failed: allIndexes(texts.length), usable: 0, perfect: false, cost: 0, message: String(e && e.message || e) };
     }
   }
+  if (best) best.cost = totalCost;
 
   // 部分成功：接受当前结果立即返回，失败子集交给 content 自动重试只重发失败段（更小更稳更省）
   if (best.usable > 0) return best;
@@ -260,7 +274,7 @@ async function translateBatch(texts, target, direction, countUsage, cfgOverride,
     translated: halves[0].translated.concat(halves[1].translated),
     errors: halves[0].errors + halves[1].errors,
     usable: texts.length - halves[0].errors - halves[1].errors,
-    cost: (halves[0].cost || 0) + (halves[1].cost || 0),
+    cost: (halves[0].cost || 0) + (halves[1].cost || 0) + totalCost,
     perfect: halves[0].errors + halves[1].errors === 0,
     // 第二半的 index 偏移 half（第一半长度），供 content 定位失败节点
     failed: halves[0].failed.concat(halves[1].failed.map(function (i) { return i + half; })),
@@ -357,14 +371,14 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
   if (sender.id !== chrome.runtime.id) return; // 只处理本扩展自己发出的消息（防其他扩展/页面伪装）
   if (msg.type === 'aitr-progress') { updateBadge(msg, sender); return; }
   if (msg.type === 'aitr-batch') {
-    translateBatch(msg.texts || [], msg.target || AITR.DEFAULTS.targetLang, msg.direction)
+    translateBatch(Array.isArray(msg.texts) ? msg.texts : [], msg.target || AITR.DEFAULTS.targetLang, msg.direction)
       .then(function (r) {
         sendResponse({ type: 'batchResult', id: msg.id, translated: r.translated, errors: r.errors, failed: r.failed || [], cost: r.cost || 0, message: r.message });
       });
     return true; // 异步 sendResponse
   }
   if (msg.type === 'aitr-direction') {
-    getDirection(msg.sample || [], msg.target || AITR.DEFAULTS.targetLang)
+    getDirection(Array.isArray(msg.sample) ? msg.sample : [], msg.target || AITR.DEFAULTS.targetLang)
       .then(function (d) { sendResponse({ type: 'directionResult', direction: d }); });
     return true;
   }

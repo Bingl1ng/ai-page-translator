@@ -12,6 +12,22 @@
   ]);
   // 注意：BUTTON 不跳过——按钮文字也翻译（用户要求），只改文本节点不影响点击/aria-label
 
+  // Tier B：内联"实体/tooltip 链接"（队名/选手/赛事名等带悬停信息或指向资料页的 <a>）保留原文不译。
+  // 否则逐文本节点替换会把链接/tooltip 附着到错词上（HLTV 的 FUT 蓝字实测错位）。
+  const ENTITY_HREF_RE = /^\/(team|player|event|ranking)\b(\/|$)/i;
+  function isEntityHref(href) {
+    if (!href) return false;
+    try { return ENTITY_HREF_RE.test(new URL(href, 'https://x').pathname); }
+    catch (e) { return false; }
+  }
+  function isEntityTooltipLink(el) {
+    if (!el || String(el.tagName).toUpperCase() !== 'A') return false;
+    if (el.hasAttribute('data-tooltip-id')) return true;      // HLTV 悬停 tooltip
+    if (el.hasAttribute('aria-describedby')) return true;     // aria tooltip
+    if (el.hasAttribute('title')) return true;                // native title 提示
+    return isEntityHref(el.getAttribute('href'));             // /team/ /player/ /event/ /ranking/
+  }
+
   // 目标语言 -> 其"脚本族"（用于外文检测）
   const TARGET_SCRIPTS = {
     'zh-CN': ['cjk'], 'zh-TW': ['cjk'],
@@ -29,6 +45,14 @@
   const DIRECTION_SAMPLE_CHARS = 3500; // 大页面方向预读采样上限
   const MAX_AUTO_RETRIES = 4;   // 失败节点自动重试预算（超出不再被兜底/增量自动重发，防费用风暴）
   // flash 批次 ~10-20% 数量不匹配，2 次预算在"主循环1次+自动重试1轮"就耗尽 → 40 段失败实测（2026-08-06）；提到 4 次可多轮收敛
+
+  // ===== 双语对照（块级）常量 =====
+  const BLOCK_TAGS = new Set(['P','LI','H1','H2','H3','H4','H5','H6','BLOCKQUOTE','TD','TH','CAPTION','DD','DT','FIGCAPTION','DIV']);
+  const BLOCK_SELECTOR = 'p,li,h1,h2,h3,h4,h5,h6,blockquote,td,th,caption,dd,dt,figcaption,div';
+  const BLOCK_SKIP_TAGS = new Set([...SKIP_TAGS, 'NAV', 'MENU']);
+  const INLINE_INSERT_TAGS = new Set(['TD','TH','CAPTION','LI','DT','DD']); // 这些容器内插 div 须作子元素，否则非法（table/list/dl）
+  const MIN_BLOCK_CHARS = 4;
+  const EMPTY_LIKE_RE = /^[\s\d.,%°:;()\-–—/\\|·•'+@#$^&*!?~=<>\[\]{}"“”''『』【】]+$/;
 
   // 分批参数按模型决定（Stage A 实测 2026-08-06，arXiv 真实文本）：
   // - flash：40条/1000字符——40 条是最优批量（20 条更差、60/100/全批逐级差）；
@@ -52,6 +76,9 @@
     return c;
   }
   let siteConfig = null;        // 当前域名的站点设置 {auto,never}，null=未设置（跟随全局）
+  // A8：banner 相关 DOM 引用提前声明（原在 ensureBanner 附近声明，translatePage 等同步期若触碰会 TDZ 抛错）
+  let host = null, shadow = null, bannerEl = null, progressEl = null, textEl = null;
+  let progressWrapEl = null, progressFillEl = null; // 进度条（节点级百分比）
   let translated = false;       // 是否有节点处于已翻译状态
   let translating = false;      // 是否正在翻译中
   let abortRequested = false;
@@ -72,6 +99,14 @@
   const failedRetries = new Map(); // 节点 -> 自动重试次数（超预算移入 skipRetry，防 4s 兜底无限重发）
   const skipRetry = new Set();   // 自动重试达上限的永久失败节点（手动"重试失败段落"仍可重试）
   const retryLog = [];           // 自动重试诊断：每轮 {round, before, sent, after}（经 aitr-status 暴露）
+
+  // ===== 双语对照（块级）记账：双语模式下以"块 Element"为翻译单位，块地图与节点地图两套并存 =====
+  const blockEls = new Set();           // Element 块 -> 已译（幂等）
+  const blockMap = new Map();           // Element 块 -> 译文
+  const blockOrigMap = new Map();       // Element 块 -> 原文 innerText
+  const blockFailed = new Map();        // Element 块 -> 原文（失败可重试）
+  const blockFailedRetries = new Map(); // Element 块 -> 自动重试次数
+  const blockSkipRetry = new Set();     // 重试超限永久失败块
   let totalNodes = 0, doneNodes = 0;    // 节点级进度（applyBatch 累计，阶段二进度条用）
   let sessionInChars = 0, sessionOutChars = 0, sessionCost = 0; // 本页累计用量与真实成本（重翻/重试/增量均计入，随 status/broadcast 上报）
 
@@ -236,9 +271,69 @@
       if (el.hasAttribute && (el.getAttribute('translate') === 'no' ||
           el.hasAttribute('data-aitr-skip') || el.getAttribute('aria-hidden') === 'true' ||
           el.isContentEditable)) return true;
+      if (el.hasAttribute && el.hasAttribute('data-aitr-cn')) return true;   // 我们注入的译文块，永不重采
+      if (isEntityTooltipLink(el)) return true;                              // Tier B：实体/tooltip 链接保留原文
+      if (isDataLabel(el)) return true;                                      // 作者/时间/国旗/用户名等数据标签不翻
       el = el.parentElement;
     }
     return false;
+  }
+
+  // ===== 双语对照（块级）helpers =====
+  function isBilingual() { return config.displayMode === 'bilingual'; }
+  function unitText(u) { return (typeof u.data === 'string') ? u.data : (u.innerText || ''); }
+  function failedCount() { return isBilingual() ? blockFailed.size : failedNodes.size; }
+  function isSubstantialText(text) {
+    const t = (text || '').trim();
+    if (t.length < MIN_BLOCK_CHARS) return false;
+    if (EMPTY_LIKE_RE.test(t)) return false;
+    return /[A-Za-zÀ-ɏ぀-ヿ가-힯Ѐ-ӿ一-鿿]/u.test(t);
+  }
+  // 数据/标签型元素（作者/时间/日期/国旗/用户名/回复数/投票/徽章/底栏等）：这些是名字/时间/计数，
+  // 翻译了会与正文错位、也难看（用户明确"这些不该翻"）。评论正文是句子、没有这些类，会照常翻译。
+  function isDataLabel(el) {
+    if (!el || !el.getAttribute) return false;
+    const id = el.id || '';
+    let cls = '';
+    try { cls = typeof el.className === 'string' ? el.className : ''; } catch (e) {}
+    return /(author|time|date|flag|country|username|nickname|\bbadge\b|reputation|bottombar|replyNum|upvote|timestamp)/i.test(id + ' ' + cls);
+  }
+  function isBlockSkippable(el) { // 元素版 isSkippable（含 nav/menu/aria-hidden/editable/我们注入的译文块）
+    let e = el;
+    while (e) {
+      if (BLOCK_SKIP_TAGS.has(e.tagName)) return true;
+      if (e.hasAttribute && (e.getAttribute('translate') === 'no' || e.hasAttribute('data-aitr-skip') ||
+          e.getAttribute('aria-hidden') === 'true' || e.isContentEditable || e.hasAttribute('data-aitr-cn'))) return true;
+      if (e.getAttribute && /^(menu|navigation)$/i.test(e.getAttribute('role'))) return true;
+      if (isDataLabel(e)) return true; // 作者/时间/国旗/用户名等数据标签不翻
+      e = e.parentElement;
+    }
+    return false;
+  }
+  function isLeafBlock(el) { return !el.querySelector(BLOCK_SELECTOR); }
+  function clearBlockFailure(el) {
+    if (blockFailed.has(el)) blockFailed.delete(el);
+    if (blockSkipRetry.has(el)) blockSkipRetry.delete(el);
+    if (blockFailedRetries.has(el)) blockFailedRetries.delete(el);
+  }
+  function findExistingBlockTranslation(el) {
+    if (INLINE_INSERT_TAGS.has(el.tagName)) {
+      for (let c = el.firstElementChild; c; c = c.nextElementSibling)
+        if (c.classList && c.classList.contains('aitr-cn')) return c;
+      return null;
+    }
+    const sib = el.nextElementSibling;
+    return (sib && sib.classList && sib.classList.contains('aitr-cn')) ? sib : null;
+  }
+  function ensureAitrCnStyle() {
+    if (document.getElementById('aitr-cn-style')) return;
+    const st = document.createElement('style');
+    st.id = 'aitr-cn-style';
+    st.textContent = '.aitr-cn{display:block;margin:.5em 0;padding-left:.6em;border-left:3px solid #bcc3cc;' +
+      'color:inherit;line-height:1.7;white-space:pre-wrap;}' +
+      '@media(prefers-color-scheme:dark){.aitr-cn{border-left-color:#525861;}}' +
+      'td .aitr-cn,th .aitr-cn{margin:.25em 0;}';
+    (document.head || document.documentElement).appendChild(st);
   }
 
   // 遍历 root 内所有文本节点，并递归进入 open shadow root（现代组件库的按钮/菜单/弹窗在 shadow 里）
@@ -280,6 +375,31 @@
     return out;
   }
 
+  // 双语对照：按"块"采集。leaf-most 策略——每个非跳过的文本节点向上找最近的 BLOCK_TAGS 祖先，
+  // 只保留「无块后代 + 非跳过容器 + 有实质文字 + 未译」的那块，避免 <p> 套 <li> / <div> 套 <div> 重复采集。
+  // v1 限制：外层容器里夹在块之间的孤儿文字会被丢弃，只翻内层块。
+  function collectBlocks() {
+    if (!document.body) return [];
+    const out = [];
+    const seen = new Set();
+    walkWithShadows(document.body, function (node) {
+      if (!node.data || !node.data.trim()) return;
+      if (isSkippable(node)) return;
+      let el = node.parentElement;
+      while (el && !BLOCK_TAGS.has(el.tagName)) el = el.parentElement;
+      if (!el || !el.isConnected) return;
+      if (seen.has(el)) return;
+      if (!isLeafBlock(el)) return;                 // 还包着别的块 -> 交给内层块
+      if (isBlockSkippable(el)) return;             // nav/menu/隐藏/可编辑
+      if (!isSubstantialText(el.innerText || '')) return; // 纯数字/标签/过短
+      if (blockEls.has(el) || blockSkipRetry.has(el)) return; // 已处理(含原样返回)或永久失败 -> 不重采（否则死循环）
+      if (findExistingBlockTranslation(el)) return; // 已插 .aitr-cn -> 幂等跳过
+      seen.add(el);
+      out.push(el);
+    });
+    return out;
+  }
+
   function buildBatches(nodes) {
     const lim = batchLimits();
     const batches = [];
@@ -302,11 +422,34 @@
     return { nodes: nodes, texts: nodes.map(function (n) { return n.data; }) };
   }
 
+  // 双语对照：按块构建批次（保持 {nodes, texts} 形状，nodes 为块 Element，texts=innerText）。
+  // 复用 runBatches/sendBatch/batchViewportDist，形状不变。
+  function buildBatchesFromBlocks(blocks) {
+    const lim = batchLimits();
+    const batches = [];
+    let cur = [], curChars = 0;
+    for (const blk of blocks) {
+      const text = blk.innerText || ''; const len = text.length;
+      if (cur.length >= lim.items || (cur.length > 0 && curChars + len > lim.chars)) {
+        batches.push({ nodes: cur, texts: cur.map(function (b) { return b.innerText || ''; }) });
+        cur = []; curChars = 0;
+      }
+      cur.push(blk); curChars += len;
+    }
+    if (cur.length) batches.push({ nodes: cur, texts: cur.map(function (b) { return b.innerText || ''; }) });
+    return batches;
+  }
+  function buildFullBatchFromBlocks(blocks) {
+    return { nodes: blocks, texts: blocks.map(function (b) { return b.innerText || ''; }) };
+  }
+
   // 首屏优先：估算 batch 到视口的距离（只测首节点代表整批，一次性开销可忽略）
   function batchViewportDist(b) {
     const n = b.nodes[0];
-    if (!n || !n.parentElement) return Infinity;
-    const r = n.parentElement.getBoundingClientRect();
+    if (!n) return Infinity;
+    const el = n.getBoundingClientRect ? n : (n.parentElement || null);
+    if (!el) return Infinity;
+    const r = el.getBoundingClientRect();
     if (r.height === 0 && r.width === 0) return Infinity; // 隐藏面板（display:none/aria-hidden）最后翻
     return r.top < 0 ? 0 : r.top;                         // 视口上方贴齐为 0；越靠下越大
   }
@@ -318,8 +461,8 @@
     const head = [];
     for (const n of nodes) {
       if (used >= 1200) break;
-      head.push(n.data);
-      used += n.data.length;
+      head.push(unitText(n));
+      used += unitText(n).length;
     }
     if (head.length) parts.push(head.join('\n'));
     const rest = nodes.slice(head.length);
@@ -328,7 +471,7 @@
       const stride = Math.max(1, Math.floor(rest.length / want));
       let picked = 0;
       for (let i = 0; i < rest.length && picked < want; i += stride) {
-        const seg = rest[i].data;
+        const seg = unitText(rest[i]);
         if (used + seg.length > DIRECTION_SAMPLE_CHARS) break;
         parts.push(seg);
         used += seg.length;
@@ -418,7 +561,7 @@
         const res = await sendBatch(batches[i], direction);
         if (abortRequested) break;
         applyBatch(batches[i], res.translated, res.failed, true);
-        errorCount = failedNodes.size;
+        errorCount = failedCount();
         if (res.failed && res.failed.length && res.message) lastErrorMsg = res.message;
       }
       return batches.length;
@@ -434,7 +577,7 @@
         sendBatch(batches[idx], direction).then(function (res) {
           if (abortRequested) return; // 取消：在途结果丢弃，不再 apply
           applyBatch(batches[idx], res.translated, res.failed, true);
-          errorCount = failedNodes.size;
+          errorCount = failedCount();
           if (res.failed && res.failed.length && res.message) lastErrorMsg = res.message;
           completed++;
           currentBatch = completed;
@@ -463,6 +606,7 @@
   // failedList: number[]（本批失败 index）。失败段保留原文、记入 failedNodes（不进 handled，
   // 保持"失败段可被后续增量/兜底扫描重新采到"的既有行为）。withProgress=true 时累计节点级进度。
   function applyBatch(batch, translatedList, failedList, withProgress) {
+    if (isBilingual()) { applyBatchBlocks(batch, translatedList, failedList, withProgress); return; } // 双语走块级
     const failedSet = failedList && (Array.isArray(failedList) ? new Set(failedList) : failedList);
     batch.nodes.forEach(function (node, i) {
       if (!node.isConnected) { if (withProgress) doneNodes++; return; }
@@ -499,6 +643,43 @@
     if (withProgress) updateProgressFill();
   }
 
+  // 双语对照（块级）应用：保留原文，块下方插入 .aitr-cn 译文块。幂等（重试/重翻先删旧）。
+  function applyBatchBlocks(batch, translatedList, failedList, withProgress) {
+    ensureAitrCnStyle();
+    const failedSet = failedList && (Array.isArray(failedList) ? new Set(failedList) : failedList);
+    batch.nodes.forEach(function (el, i) {
+      if (!el.isConnected) { if (withProgress) doneNodes++; return; }
+      if (failedSet && failedSet.has(i)) {
+        if (!blockOrigMap.has(el)) blockOrigMap.set(el, el.innerText || '');
+        blockFailed.set(el, el.innerText || '');
+        const c = (blockFailedRetries.get(el) || 0) + 1;
+        if (c >= MAX_AUTO_RETRIES) { blockSkipRetry.add(el); blockFailedRetries.delete(el); }
+        else blockFailedRetries.set(el, c);
+        if (withProgress) doneNodes++;
+        return;
+      }
+      const t = translatedList && translatedList[i];
+      if (typeof t !== 'string') { if (withProgress) doneNodes++; return; }
+      const orig = (el.innerText || '').trim();
+      if (t.trim() === orig) {
+        const ex = findExistingBlockTranslation(el); if (ex) ex.remove(); // A7：原样返回也应清掉旧译文块，避免残留
+        blockMap.set(el, t); blockEls.add(el); clearBlockFailure(el); if (withProgress) doneNodes++; return;
+      }
+      // 注意：t.trim()===orig（模型判定无需翻译）必须也标记 blockEls，否则兜底扫描会把"原样返回"的块每 4s 重发 → 死循环
+      const existing = findExistingBlockTranslation(el);
+      if (existing) existing.remove();                 // 幂等：重试/重翻先删旧
+      const div = document.createElement('div');
+      div.className = 'aitr-cn'; div.setAttribute('data-aitr-cn', ''); div.textContent = t;
+      if (INLINE_INSERT_TAGS.has(el.tagName)) el.appendChild(div);        // table/list/dl 内须作子元素
+      else el.insertAdjacentElement('afterend', div);                    // 块下一行
+      if (!blockOrigMap.has(el)) blockOrigMap.set(el, el.innerText || '');
+      blockMap.set(el, t); blockEls.add(el); clearBlockFailure(el);
+      sessionOutChars += t.length;
+      if (withProgress) doneNodes++;
+    });
+    if (withProgress) updateProgressFill();
+  }
+
   // 还原目标清单 = 内存 origMap + 持久化记录（内容脚本重启后 origMap 为空，从 sessionStorage 按路径重定位）
   function collectRestoreEntries() {
     const out = [];
@@ -521,16 +702,19 @@
     translating = false;
     abortRequested = true; // 中断进行中的翻译（runBatches 据此停发新批/丢弃在途结果）
     restoredDuringAbort = true;
-    const entries = collectRestoreEntries();
+    const entries = collectRestoreEntries(); // 双语模式为空，no-op
     for (const en of entries) {
       if (en.node.isConnected) en.node.data = en.orig;
     }
+    document.querySelectorAll('div.aitr-cn[data-aitr-cn]').forEach(function (el) { el.remove(); }); // 双语：移除译文块，原文未动
     origMap.clear();
     transMap.clear();
     handled.clear();
     failedNodes.clear();
     skipRetry.clear();
     failedRetries.clear();
+    blockEls.clear(); blockMap.clear(); blockOrigMap.clear();
+    blockFailed.clear(); blockFailedRetries.clear(); blockSkipRetry.clear();
     clearPersisted();
     translated = false;
     setState('restored');
@@ -545,12 +729,15 @@
     for (const [node, orig] of origMap) {
       if (node.isConnected) node.data = orig;
     }
+    document.querySelectorAll('div.aitr-cn[data-aitr-cn]').forEach(function (el) { el.remove(); }); // 双语：先移除旧译文块
     origMap.clear();
     transMap.clear();
     handled.clear();
     failedNodes.clear();
     skipRetry.clear();
     failedRetries.clear();
+    blockEls.clear(); blockMap.clear(); blockOrigMap.clear();
+    blockFailed.clear(); blockFailedRetries.clear(); blockSkipRetry.clear();
     translated = false;
     translatePage();
   }
@@ -585,8 +772,35 @@
     return nodes.length;
   }
 
+  // 双语对照（块级）重试失败块：保留成功块译文，仅重发失败块。自动(includeSkip=false)/手动(true)共用。
+  async function retryFailedBlocksOnce(includeSkip) {
+    if (translating) return 0;
+    if (!config.apiKey) { showBanner('nokey'); return 0; }
+    if (!blockFailed.size) { setState('done'); broadcast(); return 0; }
+    const blocks = [];
+    blockFailed.forEach(function (orig, el) {
+      if (!el.isConnected) return;
+      if (blockSkipRetry.has(el) && !includeSkip) return; // 预算耗尽块：自动跳过，手动"重试失败段落"仍可
+      blocks.push(el);
+    });
+    if (!blocks.length) { setState('done'); broadcast(); return 0; }
+    abortRequested = false;
+    translating = true;
+    totalNodes = blocks.length; doneNodes = 0;
+    const batches = buildBatchesFromBlocks(blocks);
+    totalBatch = batches.length; currentBatch = 0;
+    showBanner('translating');
+    await runBatches(batches, pageDirection);
+    translating = false;
+    translated = blockEls.size > 0; // 页面保持已翻译态（重试只补失败块）
+    setState('done');
+    broadcast();
+    return blocks.length;
+  }
+
   async function retryFailed() {
-    await retryFailedOnce(true); // 手动重试：含预算耗尽的 skipRetry 节点
+    if (isBilingual()) await retryFailedBlocksOnce(true); // 手动重试：含预算耗尽的 skipRetry 块
+    else await retryFailedOnce(true); // 手动重试：含预算耗尽的 skipRetry 节点
   }
 
   // ================= 翻译主流程 =================
@@ -600,7 +814,7 @@
     abortRequested = false;
     translationAborted = false;
     restoredDuringAbort = false;
-    const nodes = collectUnhandledTextNodes();
+    const nodes = isBilingual() ? collectBlocks() : collectUnhandledTextNodes();
     if (!nodes.length) {
       translated = true;
       setState('done');
@@ -620,13 +834,13 @@
     //          总量大 → 先预读全文方向，再分批翻译并带上方向。
     let batches, direction = '';
     const lim = batchLimits();
-    const totalChars = nodes.reduce(function (s, n) { return s + n.data.length; }, 0);
+    const totalChars = nodes.reduce(function (s, n) { return s + unitText(n).length; }, 0);
     // flash 的 fullTextLimit=0 → 永不走整页单批（无条数上限不稳定，Stage A 实测）；非 flash 保持 ≤8000 整页一批
     if (totalChars <= lim.fullTextLimit) {
-      batches = [buildFullBatch(nodes)];
+      batches = [isBilingual() ? buildFullBatchFromBlocks(nodes) : buildFullBatch(nodes)];
       pageDirection = '';
     } else {
-      batches = buildBatches(nodes);
+      batches = isBilingual() ? buildBatchesFromBlocks(nodes) : buildBatches(nodes);
       if (lim.fullTextLimit === 0) {
         // flash：不走方向预读——实测 direction 会放大数量不匹配（sim 0→4 漏译，扩展 43 段失败），可靠优先
         direction = '';
@@ -647,11 +861,11 @@
     // 失败段自动多轮补翻（免手动点"重试失败段落"；abort 时不自动补）。
     // flash 批次 ~10-20% 数量不匹配，单轮重试后仍有失败节点（2026-08-06 实测 arXiv 40 段失败）→ 预算内循环收敛；
     // retryFailedOnce 返回本轮重发数，0=无可重发（全在 skipRetry）即停。
-    if (!abortRequested && failedNodes.size) {
-      for (let r = 0; r < MAX_AUTO_RETRIES && failedNodes.size && !abortRequested; r++) {
-        const before = failedNodes.size;
-        const sent = await retryFailedOnce(false);
-        retryLog.push({ round: r + 1, before, sent, after: failedNodes.size });
+    if (!abortRequested && failedCount()) {
+      for (let r = 0; r < MAX_AUTO_RETRIES && failedCount() && !abortRequested; r++) {
+        const before = failedCount();
+        const sent = await (isBilingual() ? retryFailedBlocksOnce(false) : retryFailedOnce(false));
+        retryLog.push({ round: r + 1, before, sent, after: failedCount() });
         if (!sent) break;
       }
     }
@@ -659,10 +873,10 @@
     if (host) { try { host.setAttribute('data-aitr-retry', JSON.stringify({ dir: pageDirection, log: retryLog })); } catch (e) {} }
 
     translating = false;
-    translated = totalBatch > 0;
+    translated = isBilingual() ? blockEls.size > 0 : totalBatch > 0;
     if (abortRequested) {
       translationAborted = true; // 取消/还原后禁止增量/兜底自动续翻
-      translated = origMap.size > 0;
+      translated = isBilingual() ? blockEls.size > 0 : origMap.size > 0;
       if (translated) setState('done');
       else if (!restoredDuringAbort) hideBanner(); // 还原场景 restore 已隐藏；取消且未译任何 → 直接隐藏
     } else {
@@ -729,6 +943,35 @@
     if (translating) return; // 主流程正在跑，它自己会采集
     if (translationAborted) return; // 取消/还原后不再自动续翻
     if (document.hidden) return;
+    // 双语对照：增量翻译对"新出现的整块"生效（按块采集→逐批 sendBatch+applyBatchBlocks）
+    if (isBilingual()) {
+      const blocks = collectBlocks();
+      if (!blocks.length) return;
+      applying = true;
+      const batches = buildBatchesFromBlocks(blocks);
+      const bannerVisible = bannerShown;
+      if (bannerVisible) {
+        totalNodes = blocks.length; doneNodes = 0;
+        currentBatch = 0; totalBatch = batches.length; errorCount = failedCount();
+        setState('translating');
+      }
+      (async function () {
+        for (const b of batches) {
+          if (abortRequested) break; // "取消"按钮生效，与主流程一致
+          const res = await sendBatch(b, pageDirection);
+          currentBatch++; errorCount = failedCount();
+          applyBatchBlocks(b, res.translated, res.failed, bannerVisible);
+          if (bannerVisible) setProgress(currentBatch, totalBatch, errorCount);
+        }
+        applying = false;
+        if (abortRequested) translationAborted = true; // 取消后禁止兜底/增量自动续翻
+        if (pendingFlush) { pendingFlush = false; scheduleFlush(); }
+        errorCount = failedCount();
+        if (bannerVisible) setState('done');
+        broadcast();
+      })();
+      return;
+    }
     observeShadowRoots(document.body); // 捕捉新 attach 的 shadow root
     const nodes = collectUnhandledTextNodes();
     if (!nodes.length) return;
@@ -776,9 +1019,6 @@
   }
 
   // ================= 横幅（Shadow DOM 隔离样式） =================
-  let host = null, shadow = null, bannerEl = null, progressEl = null, textEl = null;
-  let progressWrapEl = null, progressFillEl = null; // 进度条（节点级百分比）
-
   function ensureBanner() {
     if (host) return;
     // 内容脚本重启后 DOM 里可能残留旧横幅（按钮随旧脚本失效）：复用其 shadow root，
@@ -799,13 +1039,14 @@
     shadow.innerHTML =
       '<style>' +
       ':host{all:initial;position:fixed;top:0;left:0;right:0;z-index:2147483647;display:none;font-family:system-ui,"Segoe UI",Roboto,"Microsoft YaHei",sans-serif;}' +
-      '.bar{display:flex;align-items:center;gap:12px;padding:9px 16px;background:#f8f9fb;color:#202124;' +
-      'box-shadow:0 2px 8px rgba(0,0,0,.15);border-bottom:1px solid #d9dce1;font-size:13px;line-height:1.4;flex-wrap:wrap;transition:background .25s ease;}' +
+      '.bar{display:flex;align-items:center;gap:12px;padding:11px 18px;background:#f8f9fb;color:#202124;' +
+      'box-shadow:0 4px 18px rgba(0,0,0,.14);border:1px solid #e6e9ee;border-top:none;border-radius:0 0 12px 12px;font-size:13px;line-height:1.45;flex-wrap:wrap;transition:background .25s ease;animation:aitr-drop .25s ease-out;}' +
       '.txt{flex:1;min-width:160px;}' +
       '.actions{display:flex;gap:8px;align-items:center;}' +
       '.cost{display:block;margin-top:8px;font-size:12px;color:#8a8a8a;}' +
-      'button{font:inherit;border:1px solid #c9cdd4;background:#fff;color:#1a73e8;border-radius:6px;padding:4px 14px;cursor:pointer;}' +
-      'button:hover{background:#f0f4ff;}' +
+      'button{font:inherit;font-weight:600;border:1px solid #d5dae1;background:#fff;color:#1a73e8;border-radius:10px;padding:5px 16px;cursor:pointer;transition:background .2s ease,transform .2s ease,box-shadow .2s ease;}' +
+      'button:hover{background:#f0f4ff;transform:translateY(-1px);}' +
+      'button:active{transform:scale(.97);}' +
       'button.primary{background:#1a73e8;border-color:#1a73e8;color:#fff;}' +
       'button.primary:hover{background:#1765cc;}' +
       'button.ghost{border-color:transparent;background:transparent;color:#5f6368;}' +
@@ -820,6 +1061,7 @@
       // 完成动画：上滑淡入（底色与询问/翻译中一致，不染色——用户要求去除浅绿）
       '.bar.aitr-done-pop{animation:aitr-pop .45s ease;}' +
       '@keyframes aitr-pop{0%{transform:translateY(-6px);opacity:.5}60%{transform:translateY(1px);opacity:1}100%{transform:translateY(0)}}' +
+      '@keyframes aitr-drop{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}' +
       // 暗色模式
       '@media (prefers-color-scheme: dark){' +
       '.bar{background:#202124;color:#e8eaed;border-bottom-color:#3c4043;}' +
@@ -967,7 +1209,7 @@
       total: totalBatch,
       done: currentBatch,
       errors: errorCount,
-      failedCount: failedNodes.size,
+      failedCount: failedCount(),
       totalNodes: totalNodes,
       doneNodes: doneNodes,
       sessionIn: sessionInChars,
@@ -975,7 +1217,8 @@
       sessionCost: sessionCost,
       detected: detectedLang,
       target: config.targetLang,
-      hasKey: !!config.apiKey
+      hasKey: !!config.apiKey,
+      displayMode: config.displayMode
     };
   }
 

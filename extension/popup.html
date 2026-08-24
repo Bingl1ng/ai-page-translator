@@ -6,46 +6,64 @@
   <title data-i18n="pop.title">AI 页面翻译</title>
   <style>
     body { width: 300px; margin: 0; font-family: system-ui, "Segoe UI", Roboto, "Microsoft YaHei", sans-serif; font-size: 13px; color: #202124; background: #fff; }
-    .header { display: flex; align-items: center; gap: 8px; padding: 12px 14px 10px; border-bottom: 1px solid #e8eaed; }
-    .header .logo { font-size: 18px; }
-    .header h1 { font-size: 16px; margin: 0; font-weight: 600; flex: 1; }
-    .body { padding: 10px 14px 14px; }
-    .status { font-size: 12px; color: #5f6368; min-height: 16px; margin: 2px 0 10px; }
+    .header { display: flex; align-items: center; gap: 10px; padding: 14px 14px 12px; border-bottom: 1px solid #eef0f3; }
+    .header .mark { width: 24px; height: 24px; border-radius: 9px; background: linear-gradient(135deg, #4285f4, #1a73e8); color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 700; box-shadow: 0 1px 3px rgba(26,115,232,.3); }
+    .header h1 { font-size: 15px; margin: 0; font-weight: 600; flex: 1; letter-spacing: .2px; }
+    .body { padding: 12px 14px 16px; animation: aitr-appear .28s ease-out; }
+    @keyframes aitr-appear { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    .status { font-size: 12px; color: #5f6368; line-height: 1.5; min-height: 16px; margin: 4px 0 12px; }
     .status.err { color: #d93025; }
-    .btn { display: block; width: 100%; box-sizing: border-box; padding: 9px 0; border-radius: 8px; border: none; cursor: pointer; font: inherit; margin-bottom: 6px; }
-    .btn.primary { background: #1a73e8; color: #fff; }
-    .btn.primary:hover { background: #1765cc; }
+    .btn { display: flex; align-items: center; justify-content: center; width: 100%; box-sizing: border-box; padding: 10px 0; border-radius: 12px; border: none; cursor: pointer; font: inherit; font-weight: 600; margin-bottom: 6px; transition: transform .2s ease, box-shadow .2s ease, background .2s ease; }
+    .btn:hover { transform: translateY(-1px); }
+    .btn:active { transform: scale(.98); }
+    .btn.primary { background: #1a73e8; color: #fff; box-shadow: 0 1px 2px rgba(26,115,232,.3); }
+    .btn.primary:hover { background: #1765cc; box-shadow: 0 3px 8px rgba(26,115,232,.35); }
     .btn.secondary { background: #f1f3f4; color: #202124; }
     .btn.secondary:hover { background: #e8eaed; }
-    .btn:disabled { opacity: .45; cursor: default; }
+    .btn:disabled { opacity: .45; cursor: default; transform: none; box-shadow: none; }
     .btn-row { display: flex; gap: 6px; }
     .btn-row .btn { flex: 1; margin-bottom: 6px; }
     .row { display: flex; align-items: center; justify-content: space-between; margin: 10px 0 4px; }
     .row label { color: #5f6368; }
-    select { padding: 4px 6px; border-radius: 6px; border: 1px solid #c9cdd4; font: inherit; }
-    .switch { position: relative; width: 34px; height: 20px; }
+    select { padding: 6px 8px; border-radius: 12px; border: 1px solid #dadce0; font: inherit; background: #fff; color: inherit; transition: border-color .15s ease, box-shadow .15s ease; }
+    select:focus { outline: 2px solid #1a73e8; border-color: transparent; }
+    .switch { position: relative; width: 36px; height: 21px; flex: none; }
     .switch input { opacity: 0; width: 0; height: 0; }
     .switch .track { position: absolute; inset: 0; background: #c9cdd4; border-radius: 20px; transition: .2s; }
     .switch .track:before { content: ""; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; background: #fff; border-radius: 50%; transition: .2s; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
     .switch input:checked + .track { background: #1a73e8; }
     .switch input:checked + .track:before { transform: translateX(14px); }
-    .warn { background: #fef7e0; border: 1px solid #f0dc9a; color: #7a5b00; padding: 7px 10px; border-radius: 6px; margin: 8px 0; font-size: 12px; }
+    .warn { background: #fef7e0; border: 1px solid #f0dc9a; color: #7a5b00; padding: 7px 10px; border-radius: 12px; margin: 8px 0; font-size: 12px; }
     .foot { display: flex; justify-content: space-between; margin-top: 10px; font-size: 12px; }
-    a { color: #1a73e8; cursor: pointer; text-decoration: none; }
+    a { color: #1a73e8; cursor: pointer; text-decoration: none; transition: color .15s ease; }
     a:hover { text-decoration: underline; }
-    .popup-progress { height: 4px; background: #e8eaed; border-radius: 2px; overflow: hidden; margin: 0 0 10px; }
+    .popup-progress { height: 4px; background: #e8eaed; border-radius: 6px; overflow: hidden; margin: 0 0 10px; }
     .popup-progress-fill { height: 100%; width: 0%; background: #1a73e8; transition: width .3s; }
-    .usage { margin: 10px 0 4px; background: #f8f9fb; border: 1px solid #e0e3e8; border-radius: 8px; padding: 8px 10px; font-size: 12px; }
-    .usage-row { display: flex; justify-content: space-between; line-height: 1.8; }
+    .usage { margin: 12px 0 6px; background: #f8f9fb; border: 1px solid #eef0f3; border-radius: 14px; padding: 10px 12px; font-size: 12px; }
+    .usage-row { display: flex; justify-content: space-between; align-items: center; line-height: 1.9; transition: color .2s ease; }
     .usage-row .lbl { color: #5f6368; }
+    .usage-row span:last-child { font-variant-numeric: tabular-nums; color: #3c4043; }
     .usage-row.highlight { font-weight: 600; color: #1a73e8; }
-    .usage-row.highlight .lbl { color: #1a73e8; }
+    .usage-row.highlight .lbl, .usage-row.highlight span:last-child { color: #1a73e8; }
     .site-box { margin-top: 6px; }
+    /* 分段胶囊：译文显示模式 */
+    .seg { display: inline-flex; width: 100%; border: 1px solid #dadce0; border-radius: 14px; overflow: hidden; background: #f1f3f4; }
+    .seg-btn { flex: 1; padding: 7px 0; border: none; background: transparent; color: #5f6368; font: inherit; font-weight: 500; cursor: pointer; text-align: center; transition: transform .2s ease, background .2s ease, color .2s ease; }
+    .seg-btn:hover { transform: scale(1.03); background: #e8eaed; }
+    .seg-btn:active { transform: scale(0.97); }
+    .seg-btn.is-active { background: #1a73e8; color: #fff; font-weight: 600; box-shadow: 0 1px 3px rgba(26,115,232,.4); }
+    .seg-btn:focus-visible { outline: 2px solid #1a73e8; outline-offset: 2px; }
     @media (prefers-color-scheme: dark) {
       body { background: #202124; color: #e8eaed; }
-      .header { border-bottom-color: #3c4043; }
-      .btn.secondary { background: #3c4043; color: #e8eaed; }
-      .btn.secondary:hover { background: #4a4d51; }
+      .header { border-bottom-color: #333538; }
+      .btn.secondary { background: #35373b; color: #e8eaed; }
+      .btn.secondary:hover { background: #40444a; }
+      .btn.primary { background: #8ab4f8; color: #202124; }
+      .btn.primary:hover { background: #9cc1f9; }
+      .seg { border-color: #5f6368; background: #292a2d; }
+      .seg-btn { color: #9aa0a6; }
+      .seg-btn:hover { background: #3c4043; }
+      .seg-btn.is-active { background: #8ab4f8; color: #202124; }
       select { background: #292a2d; border-color: #5f6368; color: #e8eaed; }
       .switch .track { background: #5f6368; }
       .status { color: #9aa0a6; }
@@ -54,13 +72,14 @@
       .popup-progress { background: #3c4043; }
       .usage { background: #292a2d; border-color: #3c4043; }
       .usage-row .lbl { color: #9aa0a6; }
-      .usage-row.highlight, .usage-row.highlight .lbl { color: #8ab4f8; }
+      .usage-row span:last-child { color: #e8eaed; }
+      .usage-row.highlight, .usage-row.highlight .lbl, .usage-row.highlight span:last-child { color: #8ab4f8; }
     }
   </style>
 </head>
 <body>
   <div class="header">
-    <span class="logo">🌐</span>
+    <span class="mark">译</span>
     <h1 data-i18n="pop.title">AI 页面翻译</h1>
   </div>
   <div class="body">
@@ -75,6 +94,13 @@
     <div class="row">
       <label for="lang" data-i18n="pop.targetLang">目标语言</label>
       <select id="lang"></select>
+    </div>
+    <div class="row" style="display:block">
+      <label data-i18n="pop.displayMode.label">显示模式</label>
+    </div>
+    <div class="seg" id="modeSeg" role="radiogroup">
+      <button type="button" class="seg-btn is-active" data-mode="replace" role="radio" aria-checked="true" data-i18n="pop.displayMode.replace">替换原文</button>
+      <button type="button" class="seg-btn" data-mode="bilingual" role="radio" aria-checked="false" data-i18n="pop.displayMode.bilingual">双语对照</button>
     </div>
     <div class="row">
       <label for="auto" data-i18n="pop.auto">打开外文页面自动翻译</label>

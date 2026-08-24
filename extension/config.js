@@ -13,7 +13,8 @@ const AITR = {
     // 兜底：若 v4-flash 后续失效，可改回别名 deepseek-chat（实测仍可用但官方已标记弃用），或 v4-pro
     targetLang: 'zh-CN',                 // 默认目标语言（网页译成什么）
     autoTranslate: false,                // 打开外文页面是否自动翻译
-    displayLang: 'zh-CN'                 // 插件界面显示语言（UI 文字语言，区别于 targetLang）
+    displayLang: 'zh-CN',                // 插件界面显示语言（UI 文字语言，区别于 targetLang）
+    displayMode: 'replace'               // 翻译显示模式：replace=替换原文（默认）｜bilingual=双语对照（块级上下，保留原文）
   },
 
   // 语言选项：{ value, label }
@@ -67,7 +68,7 @@ const AITR = {
     usdToCny: 7.1
   },
 
-  // token 数 → 费用估算（返回人民币）—— 历史美元粗估(升价前),已被下方 computeCost(真实单价) 替代
+  // token 数 → 费用估算（返回人民币）—— 字符级兜底估算，仅在后台未返回真实 token 时使用（主路径已是下方 computeCost 真实单价）
   estimateCost: function (inTokens, outTokens) {
     const e = this.USAGE_EST;
     const usd = ((inTokens || 0) / 1e6) * e.priceInPerM + ((outTokens || 0) / 1e6) * e.priceOutPerM;
@@ -122,14 +123,6 @@ const AITR = {
       chrome.storage.local.get(AITR.USAGE_KEY, function (obj) {
         resolve(obj[AITR.USAGE_KEY] || { byDay: {} });
       });
-    });
-  },
-
-  saveUsage: function (u) {
-    const obj = {};
-    obj[AITR.USAGE_KEY] = u;
-    return new Promise(function (resolve) {
-      chrome.storage.local.set(obj, resolve);
     });
   },
 
@@ -227,9 +220,10 @@ const AITR = {
       'opt.apiKey.label': 'API Key', 'opt.apiKey.note': '只存本机浏览器。建议建专用 Key + 设置额度上限，泄漏可随时吊销。',
       'opt.model.label': '模型', 'opt.model.note': '默认 deepseek-v4-flash（已自动关思考模式，快且稳）。',
       'opt.section.pref': '翻译偏好', 'opt.targetLang.label': '默认目标语言',
+      'opt.displayMode.label': '显示模式', 'opt.displayMode.replace': '替换原文', 'opt.displayMode.bilingual': '双语对照',
       'opt.section.ui': '界面语言', 'opt.displayLang.label': '显示语言（插件界面文字）',
       'opt.displayLang.note': '切换插件按钮、说明、横幅等文字的语言，不影响翻译目标。',
-      'opt.test': '测试连接', 'opt.testing': '正在测试连接…', 'opt.testOk': '✓ 连接成功，模型可用', 'opt.testErr': '连接失败：{msg}',
+      'opt.test': '测试连接', 'opt.testing': '正在测试连接…', 'opt.testErr': '连接失败：{msg}',
       'opt.save': '保存', 'opt.cancel': '取消', 'opt.saved': '✓ 已保存',
       'opt.section.site': '站点设置', 'opt.site.addPh': 'example.com', 'opt.site.add': '添加',
       'opt.site.note': '给指定域名设置"自动翻译/永不翻译"，优先级高于全局；子域名自动匹配上级。',
@@ -243,6 +237,7 @@ const AITR = {
       'pop.title': 'AI 页面翻译', 'pop.loading': '加载中…', 'pop.translate': '翻译此页',
       'pop.retranslate': '重新翻译', 'pop.restore': '还原原文', 'pop.retryFailed': '重试失败段落',
       'pop.targetLang': '目标语言', 'pop.auto': '打开外文页面自动翻译', 'pop.siteAuto': '此站点自动翻译',
+      'pop.displayMode.label': '显示模式', 'pop.displayMode.replace': '替换原文', 'pop.displayMode.bilingual': '双语对照',
       'pop.siteNever': '此站点永不翻译', 'pop.today': '今日', 'pop.month': '本月', 'pop.session': '本次',
       'pop.settings': '设置', 'pop.nokey': '还没配置 API Key。', 'pop.goSettings': '去设置 →',
       'pop.detectedForeign': '检测到外文，未翻译', 'pop.notTranslated': '此页未翻译',
@@ -266,9 +261,10 @@ const AITR = {
       'opt.apiKey.label': 'API Key', 'opt.apiKey.note': 'Stored only in your browser. Use a dedicated Key with a spending limit so you can revoke it if leaked.',
       'opt.model.label': 'Model', 'opt.model.note': 'Default deepseek-v4-flash (thinking off for speed & stability).',
       'opt.section.pref': 'Translation', 'opt.targetLang.label': 'Default target language',
+      'opt.displayMode.label': 'Display mode', 'opt.displayMode.replace': 'Replace', 'opt.displayMode.bilingual': 'Bilingual',
       'opt.section.ui': 'Interface', 'opt.displayLang.label': 'Display language (extension UI text)',
       'opt.displayLang.note': 'Changes the language of buttons, notes, and banners; does not affect the target language.',
-      'opt.test': 'Test connection', 'opt.testing': 'Testing connection…', 'opt.testOk': '✓ Connection OK, model usable', 'opt.testErr': 'Connection failed: {msg}',
+      'opt.test': 'Test connection', 'opt.testing': 'Testing connection…', 'opt.testErr': 'Connection failed: {msg}',
       'opt.save': 'Save', 'opt.cancel': 'Cancel', 'opt.saved': '✓ Saved',
       'opt.section.site': 'Site settings', 'opt.site.addPh': 'example.com', 'opt.site.add': 'Add',
       'opt.site.note': 'Set auto-translate / never-translate per domain (overrides global); subdomains inherit parent.',
@@ -281,6 +277,7 @@ const AITR = {
       'pop.title': 'AI Page Translate', 'pop.loading': 'Loading…', 'pop.translate': 'Translate this page',
       'pop.retranslate': 'Re-translate', 'pop.restore': 'Show original', 'pop.retryFailed': 'Retry failed parts',
       'pop.targetLang': 'Target language', 'pop.auto': 'Auto-translate foreign pages', 'pop.siteAuto': 'Auto-translate this site',
+      'pop.displayMode.label': 'Display mode', 'pop.displayMode.replace': 'Replace', 'pop.displayMode.bilingual': 'Bilingual',
       'pop.siteNever': 'Never translate this site', 'pop.today': 'Today', 'pop.month': 'This month', 'pop.session': 'This page',
       'pop.settings': 'Settings', 'pop.nokey': 'No API Key configured.', 'pop.goSettings': 'Go to Settings →',
       'pop.detectedForeign': 'Foreign language detected, not translated', 'pop.notTranslated': 'Not translated',
@@ -302,8 +299,9 @@ const AITR = {
       'opt.apiKey.label': 'API Key', 'opt.apiKey.note': '只存本機瀏覽器。建議建專用 Key + 設定額度上限，外洩可隨時撤銷。',
       'opt.model.label': '模型', 'opt.model.note': '預設 deepseek-v4-flash（已自動關思考模式，快且穩）。',
       'opt.section.pref': '翻譯偏好', 'opt.targetLang.label': '預設目標語言', 'opt.section.ui': '介面語言',
+      'opt.displayMode.label': '顯示模式', 'opt.displayMode.replace': '取代原文', 'opt.displayMode.bilingual': '雙語對照',
       'opt.displayLang.label': '顯示語言（外掛介面文字）', 'opt.displayLang.note': '切換外掛按鈕、說明、橫幅等文字語言，不影響翻譯目標。',
-      'opt.test': '測試連線', 'opt.testing': '正在測試連線…', 'opt.testOk': '✓ 連線成功，模型可用', 'opt.testErr': '連線失敗：{msg}',
+      'opt.test': '測試連線', 'opt.testing': '正在測試連線…', 'opt.testErr': '連線失敗：{msg}',
       'opt.save': '儲存', 'opt.cancel': '取消', 'opt.saved': '✓ 已儲存', 'opt.section.site': '網站設定', 'opt.site.addPh': 'example.com', 'opt.site.add': '新增',
       'opt.site.note': '給指定網域設定"自動翻譯/永不翻譯"，優先於全域；子網域自動比對上級。',
       'opt.help.title': '說明', 'opt.help.1': '翻譯呼叫你填的 API，依你的帳戶計費。DeepSeek 很便宜，一般網頁一次約幾分錢。',
@@ -313,6 +311,7 @@ const AITR = {
       'opt.confirm1': '你的 API Key 會隨翻譯請求發送到以下位址：\n\n  {origin}\n\n請確認你信任該服務商（或確認這是你自己的閘道）。\n按「確定」繼續儲存，按「取消」返回修改。',
       'pop.title': 'AI 頁面翻譯', 'pop.loading': '載入中…', 'pop.translate': '翻譯此頁', 'pop.retranslate': '重新翻譯',
       'pop.restore': '還原原文', 'pop.retryFailed': '重試失敗段落', 'pop.targetLang': '目標語言', 'pop.auto': '開啟外文頁面自動翻譯',
+      'pop.displayMode.label': '顯示模式', 'pop.displayMode.replace': '取代原文', 'pop.displayMode.bilingual': '雙語對照',
       'pop.siteAuto': '此網站自動翻譯', 'pop.siteNever': '此網站永不翻譯', 'pop.today': '今日', 'pop.month': '本月', 'pop.session': '本次',
       'pop.settings': '設定', 'pop.nokey': '還沒設定 API Key。', 'pop.goSettings': '去設定 →', 'pop.detectedForeign': '偵測到外文，未翻譯',
       'pop.notTranslated': '此頁未翻譯', 'pop.unsupported': '此頁面不支援翻譯（瀏覽器內部頁面或受限站點）。',
@@ -329,8 +328,9 @@ const AITR = {
       'opt.apiKey.label': 'API Key', 'opt.apiKey.note': 'ローカルブラウザのみに保存。専用 Key を作成し上限を設定、漏洩時はいつでも無効化できます。',
       'opt.model.label': 'モデル', 'opt.model.note': 'デフォルト deepseek-v4-flash（思考モード無効、高速で安定）。',
       'opt.section.pref': '翻訳設定', 'opt.targetLang.label': 'デフォルトの目標言語', 'opt.section.ui': 'インターフェース',
+      'opt.displayMode.label': '表示モード', 'opt.displayMode.replace': '原文を置き換え', 'opt.displayMode.bilingual': 'バイリンガル対訳',
       'opt.displayLang.label': '表示言語（拡張のUIテキスト）', 'opt.displayLang.note': 'ボタン・説明・バナーなどの表示言語を切り替えます。翻訳先には影響しません。',
-      'opt.test': '接続テスト', 'opt.testing': '接続をテスト中…', 'opt.testOk': '✓ 接続成功、モデル利用可', 'opt.testErr': '接続失敗：{msg}',
+      'opt.test': '接続テスト', 'opt.testing': '接続をテスト中…', 'opt.testErr': '接続失敗：{msg}',
       'opt.save': '保存', 'opt.cancel': 'キャンセル', 'opt.saved': '✓ 保存済み', 'opt.section.site': 'サイト設定', 'opt.site.addPh': 'example.com', 'opt.site.add': '追加',
       'opt.site.note': 'ドメインごとに「自動翻訳/翻訳しない」を設定（全体設定より優先）。サブドメインは親を継承。',
       'opt.help.title': '説明', 'opt.help.1': '翻訳はあなたの API アカウントに課金されます。DeepSeek は安価、通常ページは数銭程度。',
@@ -340,6 +340,7 @@ const AITR = {
       'opt.confirm1': 'API Key は翻訳リクエストと共に以下のアドレスへ送信されます：\n\n  {origin}\n\nこのプロバイダーを信頼するか（または自身のゲートウェイか）確認してください。\n「OK」で保存、「キャンセル」で戻ります。',
       'pop.title': 'AI ページ翻訳', 'pop.loading': '読み込み中…', 'pop.translate': 'このページを翻訳', 'pop.retranslate': '再翻訳',
       'pop.restore': '原文を表示', 'pop.retryFailed': '失敗部分を再試行', 'pop.targetLang': '目標言語', 'pop.auto': '外国語ページを自動翻訳',
+      'pop.displayMode.label': '表示モード', 'pop.displayMode.replace': '原文を置き換え', 'pop.displayMode.bilingual': 'バイリンガル対訳',
       'pop.siteAuto': 'このサイトを自動翻訳', 'pop.siteNever': 'このサイトを翻訳しない', 'pop.today': '今日', 'pop.month': '今月', 'pop.session': '今回',
       'pop.settings': '設定', 'pop.nokey': 'API Key が未設定です。', 'pop.goSettings': '設定へ →', 'pop.detectedForeign': '外国語を検出、未翻訳',
       'pop.notTranslated': '未翻訳', 'pop.unsupported': 'このページは翻訳できません（ブラウザ内部または制限付き）。',
@@ -356,8 +357,9 @@ const AITR = {
       'opt.apiKey.label': 'API Key', 'opt.apiKey.note': '로컬 브라우저에만 저장. 전용 Key를 만들고 한도를 설정해 유출 시 즉시 폐기하세요.',
       'opt.model.label': '모델', 'opt.model.note': '기본값 deepseek-v4-flash (생각 모드 끔, 빠르고 안정적).',
       'opt.section.pref': '번역 설정', 'opt.targetLang.label': '기본 번역 대상 언어', 'opt.section.ui': '인터페이스',
+      'opt.displayMode.label': '표시 모드', 'opt.displayMode.replace': '원문 대체', 'opt.displayMode.bilingual': '이중언어 대조',
       'opt.displayLang.label': '표시 언어 (확장 UI 텍스트)', 'opt.displayLang.note': '버튼·설명·배너 등 UI 언어를 전환합니다. 번역 대상에는 영향 없음.',
-      'opt.test': '연결 테스트', 'opt.testing': '연결 테스트 중…', 'opt.testOk': '✓ 연결 성공, 모델 사용 가능', 'opt.testErr': '연결 실패: {msg}',
+      'opt.test': '연결 테스트', 'opt.testing': '연결 테스트 중…', 'opt.testErr': '연결 실패: {msg}',
       'opt.save': '저장', 'opt.cancel': '취소', 'opt.saved': '✓ 저장됨', 'opt.section.site': '사이트 설정', 'opt.site.addPh': 'example.com', 'opt.site.add': '추가',
       'opt.site.note': '도메인별로 "자동 번역/번역 안 함" 설정 (전역보다 우선). 하위 도메인은 상위를 상속.',
       'opt.help.title': '설명', 'opt.help.1': '번역은 귀하의 API 계정으로 청구됩니다. DeepSeek는 저렴하며 일반 페이지는 몇 센트.',
@@ -367,6 +369,7 @@ const AITR = {
       'opt.confirm1': 'API Key가 번역 요청과 함께 다음 주소로 전송됩니다:\n\n  {origin}\n\n이 제공자를 신뢰하는지(또는 자신의 게이트웨이) 확인하세요.\n"확인" 저장, "취소" 돌아가기.',
       'pop.title': 'AI 페이지 번역', 'pop.loading': '불러오는 중…', 'pop.translate': '이 페이지 번역', 'pop.retranslate': '다시 번역',
       'pop.restore': '원본 표시', 'pop.retryFailed': '실패한 부분 재시도', 'pop.targetLang': '대상 언어', 'pop.auto': '외국어 페이지 자동 번역',
+      'pop.displayMode.label': '표시 모드', 'pop.displayMode.replace': '원문 대체', 'pop.displayMode.bilingual': '이중언어 대조',
       'pop.siteAuto': '이 사이트 자동 번역', 'pop.siteNever': '이 사이트 번역 안 함', 'pop.today': '오늘', 'pop.month': '이번 달', 'pop.session': '이 페이지',
       'pop.settings': '설정', 'pop.nokey': 'API Key가 설정되지 않았습니다.', 'pop.goSettings': '설정으로 →', 'pop.detectedForeign': '외국어 감지됨, 번역 안 됨',
       'pop.notTranslated': '번역되지 않음', 'pop.unsupported': '이 페이지는 번역할 수 없습니다 (브라우저 내부 또는 제한됨).',
@@ -383,8 +386,9 @@ const AITR = {
       'opt.apiKey.label': 'Clé API', 'opt.apiKey.note': 'Stockée uniquement dans votre navigateur. Utilisez une clé dédiée avec une limite de dépenses pour pouvoir la révoquer si elle fuite.',
       'opt.model.label': 'Modèle', 'opt.model.note': 'Par défaut deepseek-v4-flash (réflexion désactivée pour la rapidité et la stabilité).',
       'opt.section.pref': 'Traduction', 'opt.targetLang.label': 'Langue cible par défaut', 'opt.section.ui': 'Interface',
+      'opt.displayMode.label': 'Mode d\'affichage', 'opt.displayMode.replace': 'Remplacer', 'opt.displayMode.bilingual': 'Bilingue',
       'opt.displayLang.label': 'Langue d\'affichage (texte de l\'extension)', 'opt.displayLang.note': 'Change la langue des boutons, notes et bannières ; n\'affecte pas la langue cible.',
-      'opt.test': 'Tester la connexion', 'opt.testing': 'Test de connexion…', 'opt.testOk': '✓ Connexion OK, modèle utilisable', 'opt.testErr': 'Échec de connexion : {msg}',
+      'opt.test': 'Tester la connexion', 'opt.testing': 'Test de connexion…', 'opt.testErr': 'Échec de connexion : {msg}',
       'opt.save': 'Enregistrer', 'opt.cancel': 'Annuler', 'opt.saved': '✓ Enregistré', 'opt.section.site': 'Réglages du site', 'opt.site.addPh': 'example.com', 'opt.site.add': 'Ajouter',
       'opt.site.note': 'Définir auto-traduction / ne jamais traduire par domaine (prioritaire sur le global) ; les sous-domaines héritent.',
       'opt.help.title': 'Notes', 'opt.help.1': 'La traduction facture votre propre compte API. DeepSeek est bon marché — une page coûte quelques centimes.',
@@ -394,6 +398,7 @@ const AITR = {
       'opt.confirm1': 'Votre clé API sera envoyée à cette adresse avec les requêtes de traduction :\n\n  {origin}\n\nConfirmez que vous faites confiance à ce fournisseur (ou que c\'est votre propre passerelle).\nOK pour enregistrer, Annuler pour revenir.',
       'pop.title': 'AI Page Translate', 'pop.loading': 'Chargement…', 'pop.translate': 'Traduire cette page', 'pop.retranslate': 'Retraduire',
       'pop.restore': 'Afficher l\'original', 'pop.retryFailed': 'Réessayer les échecs', 'pop.targetLang': 'Langue cible', 'pop.auto': 'Traduire automatiquement les pages étrangères',
+      'pop.displayMode.label': 'Mode d\'affichage', 'pop.displayMode.replace': 'Remplacer', 'pop.displayMode.bilingual': 'Bilingue',
       'pop.siteAuto': 'Auto-traduire ce site', 'pop.siteNever': 'Ne jamais traduire ce site', 'pop.today': 'Aujourd\'hui', 'pop.month': 'Ce mois', 'pop.session': 'Cette page',
       'pop.settings': 'Réglages', 'pop.nokey': 'Aucune clé API configurée.', 'pop.goSettings': 'Aller aux réglages →', 'pop.detectedForeign': 'Langue étrangère détectée, non traduite',
       'pop.notTranslated': 'Non traduit', 'pop.unsupported': 'Cette page ne peut pas être traduite (page interne du navigateur ou restreinte).',
@@ -410,8 +415,9 @@ const AITR = {
       'opt.apiKey.label': 'API-Schlüssel', 'opt.apiKey.note': 'Nur in Ihrem Browser gespeichert. Verwenden Sie einen dedizierten Key mit Ausgabenlimit, um ihn bei Verlust widerrufen zu können.',
       'opt.model.label': 'Modell', 'opt.model.note': 'Standard deepseek-v4-flash (Denken deaktiviert für Schnelligkeit & Stabilität).',
       'opt.section.pref': 'Übersetzung', 'opt.targetLang.label': 'Standard-Zielsprache', 'opt.section.ui': 'Oberfläche',
+      'opt.displayMode.label': 'Anzeigemodus', 'opt.displayMode.replace': 'Ersetzen', 'opt.displayMode.bilingual': 'Zweisprachig',
       'opt.displayLang.label': 'Anzeigesprache (Extension-UI-Text)', 'opt.displayLang.note': 'Ändert die Sprache von Schaltflächen, Hinweisen und Bannern; beeinflusst die Zielsprache nicht.',
-      'opt.test': 'Verbindung testen', 'opt.testing': 'Verbindung wird getestet…', 'opt.testOk': '✓ Verbindung OK, Modell nutzbar', 'opt.testErr': 'Verbindung fehlgeschlagen: {msg}',
+      'opt.test': 'Verbindung testen', 'opt.testing': 'Verbindung wird getestet…', 'opt.testErr': 'Verbindung fehlgeschlagen: {msg}',
       'opt.save': 'Speichern', 'opt.cancel': 'Abbrechen', 'opt.saved': '✓ Gespeichert', 'opt.section.site': 'Website-Einstellungen', 'opt.site.addPh': 'example.com', 'opt.site.add': 'Hinzufügen',
       'opt.site.note': 'Pro Domain „Immer übersetzen / Nie übersetzen“ (überschreibt global); Subdomains erben.',
       'opt.help.title': 'Hinweise', 'opt.help.1': 'Übersetzung wird Ihrem eigenen API-Konto berechnet. DeepSeek ist günstig — eine Seite kostet Cent.',
@@ -421,6 +427,7 @@ const AITR = {
       'opt.confirm1': 'Ihr API-Schlüssel wird mit Übersetzungsanfragen an diese Adresse gesendet:\n\n  {origin}\n\nBestätigen Sie, dass Sie diesem Anbieter vertrauen (oder es Ihr eigenes Gateway ist).\nOK zum Speichern, Abbrechen zum Zurückgehen.',
       'pop.title': 'AI Seite Übersetzen', 'pop.loading': 'Laden…', 'pop.translate': 'Diese Seite übersetzen', 'pop.retranslate': 'Erneut übersetzen',
       'pop.restore': 'Original anzeigen', 'pop.retryFailed': 'Fehler erneut versuchen', 'pop.targetLang': 'Zielsprache', 'pop.auto': 'Fremdsprachige Seiten automatisch übersetzen',
+      'pop.displayMode.label': 'Anzeigemodus', 'pop.displayMode.replace': 'Ersetzen', 'pop.displayMode.bilingual': 'Zweisprachig',
       'pop.siteAuto': 'Diese Website automatisch übersetzen', 'pop.siteNever': 'Diese Website nie übersetzen', 'pop.today': 'Heute', 'pop.month': 'Dieser Monat', 'pop.session': 'Diese Seite',
       'pop.settings': 'Einstellungen', 'pop.nokey': 'Kein API-Schlüssel konfiguriert.', 'pop.goSettings': 'Zu den Einstellungen →', 'pop.detectedForeign': 'Fremdsprache erkannt, nicht übersetzt',
       'pop.notTranslated': 'Nicht übersetzt', 'pop.unsupported': 'Diese Seite kann nicht übersetzt werden (Browser-intern oder eingeschränkt).',
@@ -437,8 +444,9 @@ const AITR = {
       'opt.apiKey.label': 'Clave API', 'opt.apiKey.note': 'Solo se guarda en tu navegador. Usa una clave dedicada con límite de gasto para poder revocarla si se filtra.',
       'opt.model.label': 'Modelo', 'opt.model.note': 'Por defecto deepseek-v4-flash (pensamiento desactivado para rapidez y estabilidad).',
       'opt.section.pref': 'Traducción', 'opt.targetLang.label': 'Idioma de destino predeterminado', 'opt.section.ui': 'Interfaz',
+      'opt.displayMode.label': 'Modo de visualización', 'opt.displayMode.replace': 'Reemplazar', 'opt.displayMode.bilingual': 'Bilingüe',
       'opt.displayLang.label': 'Idioma de pantalla (texto de la extensión)', 'opt.displayLang.note': 'Cambia el idioma de botones, notas y banners; no afecta al idioma de destino.',
-      'opt.test': 'Probar conexión', 'opt.testing': 'Probando conexión…', 'opt.testOk': '✓ Conexión correcta, modelo usable', 'opt.testErr': 'Error de conexión: {msg}',
+      'opt.test': 'Probar conexión', 'opt.testing': 'Probando conexión…', 'opt.testErr': 'Error de conexión: {msg}',
       'opt.save': 'Guardar', 'opt.cancel': 'Cancelar', 'opt.saved': '✓ Guardado', 'opt.section.site': 'Ajustes del sitio', 'opt.site.addPh': 'example.com', 'opt.site.add': 'Añadir',
       'opt.site.note': 'Configura auto-traducir / nunca traducir por dominio (prioridad sobre global); los subdominios heredan.',
       'opt.help.title': 'Notas', 'opt.help.1': 'La traducción se factura a tu propia cuenta de API. DeepSeek es barato: una página cuesta unos céntimos.',
@@ -448,6 +456,7 @@ const AITR = {
       'opt.confirm1': 'Tu clave API se enviará a esta dirección con las solicitudes de traducción:\n\n  {origin}\n\nConfirma que confías en este proveedor (o que es tu propio gateway).\nOK para guardar, Cancelar para volver.',
       'pop.title': 'Traducción IA', 'pop.loading': 'Cargando…', 'pop.translate': 'Traducir esta página', 'pop.retranslate': 'Volver a traducir',
       'pop.restore': 'Mostrar original', 'pop.retryFailed': 'Reintentar fallos', 'pop.targetLang': 'Idioma de destino', 'pop.auto': 'Traducir automáticamente páginas extranjeras',
+      'pop.displayMode.label': 'Modo de visualización', 'pop.displayMode.replace': 'Reemplazar', 'pop.displayMode.bilingual': 'Bilingüe',
       'pop.siteAuto': 'Auto-traducir este sitio', 'pop.siteNever': 'Nunca traducir este sitio', 'pop.today': 'Hoy', 'pop.month': 'Este mes', 'pop.session': 'Esta página',
       'pop.settings': 'Ajustes', 'pop.nokey': 'No hay clave API configurada.', 'pop.goSettings': 'Ir a ajustes →', 'pop.detectedForeign': 'Idioma extranjero detectado, no traducido',
       'pop.notTranslated': 'No traducido', 'pop.unsupported': 'Esta página no se puede traducir (página interna del navegador o restringida).',
@@ -464,8 +473,9 @@ const AITR = {
       'opt.apiKey.label': 'Ключ API', 'opt.apiKey.note': 'Хранится только в вашем браузере. Используйте выделенный ключ с лимитом расходов, чтобы его можно было отозвать при утечке.',
       'opt.model.label': 'Модель', 'opt.model.note': 'По умолчанию deepseek-v4-flash (мышление отключено для скорости и стабильности).',
       'opt.section.pref': 'Перевод', 'opt.targetLang.label': 'Язык перевода по умолчанию', 'opt.section.ui': 'Интерфейс',
+      'opt.displayMode.label': 'Режим отображения', 'opt.displayMode.replace': 'Заменить', 'opt.displayMode.bilingual': 'Двуязычный',
       'opt.displayLang.label': 'Язык интерфейса (текст расширения)', 'opt.displayLang.note': 'Меняет язык кнопок, примечаний и баннеров; не влияет на язык перевода.',
-      'opt.test': 'Проверить подключение', 'opt.testing': 'Проверка подключения…', 'opt.testOk': '✓ Подключение OK, модель доступна', 'opt.testErr': 'Ошибка подключения: {msg}',
+      'opt.test': 'Проверить подключение', 'opt.testing': 'Проверка подключения…', 'opt.testErr': 'Ошибка подключения: {msg}',
       'opt.save': 'Сохранить', 'opt.cancel': 'Отмена', 'opt.saved': '✓ Сохранено', 'opt.section.site': 'Настройки сайта', 'opt.site.addPh': 'example.com', 'opt.site.add': 'Добавить',
       'opt.site.note': 'Задать «автоперевод / не переводить» для домена (приоритет над глобальным); поддомены наследуют.',
       'opt.help.title': 'Примечания', 'opt.help.1': 'Перевод тарифицируется по вашему собственному аккаунту API. DeepSeek дешёв — страница стоит копейки.',
@@ -475,6 +485,7 @@ const AITR = {
       'opt.confirm1': 'Ваш ключ API будет отправлен по этому адресу вместе с запросами перевода:\n\n  {origin}\n\nПодтвердите, что доверяете этому провайдеру (или это ваш собственный шлюз).\nOK — сохранить, Отмена — назад.',
       'pop.title': 'Перевод ИИ', 'pop.loading': 'Загрузка…', 'pop.translate': 'Перевести эту страницу', 'pop.retranslate': 'Перевести заново',
       'pop.restore': 'Показать оригинал', 'pop.retryFailed': 'Повторить ошибки', 'pop.targetLang': 'Язык перевода', 'pop.auto': 'Автопереводить иностранные страницы',
+      'pop.displayMode.label': 'Режим отображения', 'pop.displayMode.replace': 'Заменить', 'pop.displayMode.bilingual': 'Двуязычный',
       'pop.siteAuto': 'Автопереводить этот сайт', 'pop.siteNever': 'Никогда не переводить этот сайт', 'pop.today': 'Сегодня', 'pop.month': 'В этом месяце', 'pop.session': 'Эта страница',
       'pop.settings': 'Настройки', 'pop.nokey': 'Ключ API не настроен.', 'pop.goSettings': 'К настройкам →', 'pop.detectedForeign': 'Обнаружен иностранный язык, не переведено',
       'pop.notTranslated': 'Не переведено', 'pop.unsupported': 'Эта страница не может быть переведена (внутренняя страница браузера или ограниченная).',
@@ -491,8 +502,9 @@ const AITR = {
       'opt.apiKey.label': 'Chave API', 'opt.apiKey.note': 'Armazenada apenas no seu navegador. Use uma chave dedicada com limite de gastos para poder revogá-la se vazar.',
       'opt.model.label': 'Modelo', 'opt.model.note': 'Padrão deepseek-v4-flash (pensamento desativado para rapidez e estabilidade).',
       'opt.section.pref': 'Tradução', 'opt.targetLang.label': 'Idioma de destino padrão', 'opt.section.ui': 'Interface',
+      'opt.displayMode.label': 'Modo de exibição', 'opt.displayMode.replace': 'Substituir', 'opt.displayMode.bilingual': 'Bilíngue',
       'opt.displayLang.label': 'Idioma de exibição (texto da extensão)', 'opt.displayLang.note': 'Muda o idioma de botões, notas e banners; não afeta o idioma de destino.',
-      'opt.test': 'Testar conexão', 'opt.testing': 'A testar a ligação…', 'opt.testOk': '✓ Ligação OK, modelo utilizável', 'opt.testErr': 'Falha na ligação: {msg}',
+      'opt.test': 'Testar conexão', 'opt.testing': 'A testar a ligação…', 'opt.testErr': 'Falha na ligação: {msg}',
       'opt.save': 'Guardar', 'opt.cancel': 'Cancelar', 'opt.saved': '✓ Guardado', 'opt.section.site': 'Configurações do site', 'opt.site.addPh': 'example.com', 'opt.site.add': 'Adicionar',
       'opt.site.note': 'Definir tradução automática / nunca traduzir por domínio (prioridade sobre o global); subdomínios herdam.',
       'opt.help.title': 'Notas', 'opt.help.1': 'A tradução é cobrada na sua própria conta de API. DeepSeek é barato — uma página custa alguns cêntimos.',
@@ -502,6 +514,7 @@ const AITR = {
       'opt.confirm1': 'A sua chave API será enviada para este endereço com os pedidos de tradução:\n\n  {origin}\n\nConfirme que confia neste fornecedor (ou que é o seu próprio gateway).\nOK para guardar, Cancelar para voltar.',
       'pop.title': 'Tradução IA', 'pop.loading': 'A carregar…', 'pop.translate': 'Traduzir esta página', 'pop.retranslate': 'Retraduzir',
       'pop.restore': 'Mostrar original', 'pop.retryFailed': 'Repetir falhas', 'pop.targetLang': 'Idioma de destino', 'pop.auto': 'Traduzir automaticamente páginas estrangeiras',
+      'pop.displayMode.label': 'Modo de exibição', 'pop.displayMode.replace': 'Substituir', 'pop.displayMode.bilingual': 'Bilíngue',
       'pop.siteAuto': 'Tradução automática deste site', 'pop.siteNever': 'Nunca traduzir este site', 'pop.today': 'Hoje', 'pop.month': 'Este mês', 'pop.session': 'Esta página',
       'pop.settings': 'Configurações', 'pop.nokey': 'Nenhuma chave API configurada.', 'pop.goSettings': 'Ir para as configurações →', 'pop.detectedForeign': 'Idioma estrangeiro detetado, não traduzido',
       'pop.notTranslated': 'Não traduzido', 'pop.unsupported': 'Esta página não pode ser traduzida (página interna do navegador ou restrita).',
@@ -518,8 +531,9 @@ const AITR = {
       'opt.apiKey.label': 'Chiave API', 'opt.apiKey.note': 'Salvata solo nel browser. Usa una chiave dedicata con limite di spesa per poterla revocare se trapela.',
       'opt.model.label': 'Modello', 'opt.model.note': 'Predefinito deepseek-v4-flash (pensiero disattivato per velocità e stabilità).',
       'opt.section.pref': 'Traduzione', 'opt.targetLang.label': 'Lingua di destinazione predefinita', 'opt.section.ui': 'Interfaccia',
+      'opt.displayMode.label': 'Modalità di visualizzazione', 'opt.displayMode.replace': 'Sostituisci', 'opt.displayMode.bilingual': 'Bilingue',
       'opt.displayLang.label': 'Lingua di visualizzazione (testo dell\'estensione)', 'opt.displayLang.note': 'Cambia la lingua di pulsanti, note e banner; non influisce sulla lingua di destinazione.',
-      'opt.test': 'Testa connessione', 'opt.testing': 'Test connessione…', 'opt.testOk': '✓ Connessione OK, modello utilizzabile', 'opt.testErr': 'Errore di connessione: {msg}',
+      'opt.test': 'Testa connessione', 'opt.testing': 'Test connessione…', 'opt.testErr': 'Errore di connessione: {msg}',
       'opt.save': 'Salva', 'opt.cancel': 'Annulla', 'opt.saved': '✓ Salvato', 'opt.section.site': 'Impostazioni sito', 'opt.site.addPh': 'example.com', 'opt.site.add': 'Aggiungi',
       'opt.site.note': 'Imposta traduci automaticamente / mai tradurre per dominio (priorità sul globale); i sottodomini ereditano.',
       'opt.help.title': 'Note', 'opt.help.1': 'La traduzione addebita il tuo account API. DeepSeek è economico — una pagina costa pochi centesimi.',
@@ -529,6 +543,7 @@ const AITR = {
       'opt.confirm1': 'La tua chiave API verrà inviata a questo indirizzo con le richieste di traduzione:\n\n  {origin}\n\nConferma che ti fidi di questo provider (o che è il tuo gateway).\nOK per salvare, Annulla per tornare.',
       'pop.title': 'Traduzione IA', 'pop.loading': 'Caricamento…', 'pop.translate': 'Traduci questa pagina', 'pop.retranslate': 'Ritraduci',
       'pop.restore': 'Mostra originale', 'pop.retryFailed': 'Riprova errori', 'pop.targetLang': 'Lingua di destinazione', 'pop.auto': 'Traduci automaticamente le pagine straniere',
+      'pop.displayMode.label': 'Modalità di visualizzazione', 'pop.displayMode.replace': 'Sostituisci', 'pop.displayMode.bilingual': 'Bilingue',
       'pop.siteAuto': 'Traduci automaticamente questo sito', 'pop.siteNever': 'Non tradurre mai questo sito', 'pop.today': 'Oggi', 'pop.month': 'Questo mese', 'pop.session': 'Questa pagina',
       'pop.settings': 'Impostazioni', 'pop.nokey': 'Nessuna chiave API configurata.', 'pop.goSettings': 'Vai alle impostazioni →', 'pop.detectedForeign': 'Lingua straniera rilevata, non tradotta',
       'pop.notTranslated': 'Non tradotto', 'pop.unsupported': 'Questa pagina non può essere tradotta (pagina interna del browser o limitata).',
