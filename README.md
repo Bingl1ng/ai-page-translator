@@ -29,9 +29,9 @@
 
 ## 截图
 
-| 询问是否翻译 | 翻译完成 | 深色模式 |
-|---|---|---|
-| ![询问翻译](screenshots/shot-offer.png) | ![翻译完成](screenshots/shot-done-light.png) | ![深色模式](screenshots/shot-done-dark.png) |
+| 询问是否翻译 | 翻译完成（浅色） | 深色模式 | 双语对照 |
+|---|---|---|---|
+| ![询问翻译](screenshots/shot-offer.png) | ![翻译完成](screenshots/shot-done-light.png) | ![深色模式](screenshots/shot-done-dark.png) | ![双语对照](screenshots/shot-bilingual.png) |
 
 ## 安装
 

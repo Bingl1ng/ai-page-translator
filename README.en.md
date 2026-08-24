@@ -29,9 +29,9 @@ A browser extension (Manifest V3) for **Edge / Chrome**. Translations see full-p
 
 ## Screenshots
 
-| Translate offer | Translation done | Dark mode |
-|---|---|---|
-| ![Translate offer](screenshots/shot-offer.png) | ![Translation done](screenshots/shot-done-light.png) | ![Dark mode](screenshots/shot-done-dark.png) |
+| Translate offer | Translation done (light) | Dark mode | Bilingual view |
+|---|---|---|---|
+| ![Translate offer](screenshots/shot-offer.png) | ![Translation done](screenshots/shot-done-light.png) | ![Dark mode](screenshots/shot-done-dark.png) | ![Bilingual](screenshots/shot-bilingual.png) |
 
 ## Installation
 
