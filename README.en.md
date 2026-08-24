@@ -17,6 +17,9 @@ A browser extension (Manifest V3) for **Edge / Chrome**. Translations see full-p
 | **Incremental translation** | New content from SPA navigation / dynamic loading / Shadow DOM / tab switches auto-translates |
 | **Auto-retry on failure** | Transient API errors auto-retry; any remaining failures can be retried in one click |
 | **Restore after restart** | Translated pages can be restored to the original text even after an extension update / reload |
+| **Bilingual view** | Switch to a "bilingual" display mode — keeps the original text and shows the translation on a line below each paragraph, great for papers / language learning / checking the source. Default remains "replace" |
+| **Entity / tooltip links preserved** | Links with tooltips or pointing to team / player / event pages are left untouched, so hover hints don't shift onto the wrong word |
+| **Comment metadata untouched** | In comment sections only the sentence bodies are translated; author / time / date / flag / username labels stay in the original language |
 | **Real-time progress** | Node-level progress bar in the banner + toolbar badge, cancellable anytime |
 | **Usage statistics** | Tracks **today/month** real token usage, and computes **real cost** at the latest official price × peak/off-peak |
 | **Multi-language** | 11 target languages supported |
@@ -34,7 +37,7 @@ A browser extension (Manifest V3) for **Edge / Chrome**. Translations see full-p
 
 **Option 1: Load the release package (recommended)**
 
-1. Download `ai-page-translator-v1.5.5.zip` from [Releases](../../releases) and extract
+1. Download `ai-page-translator-v1.7.3.zip` from [Releases](../../releases) and extract
 2. Open `edge://extensions` (Chrome: `chrome://extensions`)
 3. Turn on **"Developer mode"** (bottom-left in Edge)
 4. Click **"Load unpacked"** and select the extracted `extension` folder
@@ -54,6 +57,7 @@ git clone https://github.com/Bingl1ng/ai-page-translator
 - **API Key**: Get one at the [DeepSeek platform](https://platform.deepseek.com) (`sk-` prefix). Stored only in local `chrome.storage.local`.
 - **Model**: Default `deepseek-v4-flash` (thinking mode auto-disabled — fast and stable). Can be changed to other DeepSeek models.
 - **Target language**: Default Simplified Chinese; 11 languages supported.
+- **Display mode**: `Replace` (default, translation replaces the page text) or `Bilingual` (keeps the original, translation below each paragraph).
 - **Auto-translate**: Optionally auto-translate foreign pages (off by default).
 - **Per-site settings**: e.g. "never translate" / "always translate" for a specific site.
 
