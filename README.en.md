@@ -18,8 +18,8 @@ A browser extension (Manifest V3) for **Edge / Chrome**. Translations see full-p
 | **Auto-retry on failure** | Transient API errors auto-retry; any remaining failures can be retried in one click |
 | **Restore after restart** | Translated pages can be restored to the original text even after an extension update / reload |
 | **Bilingual view** | Switch to a "bilingual" display mode — keeps the original text and shows the translation on a line below each paragraph, great for papers / language learning / checking the source. Default remains "replace" |
-| **Entity / tooltip links preserved** | Links with tooltips or pointing to team / player / event pages are left untouched, so hover hints don't shift onto the wrong word |
-| **Comment metadata untouched** | In comment sections only the sentence bodies are translated; author / time / date / flag / username labels stay in the original language |
+| **Entity / tooltip links preserved** | Links with tooltips or pointing to other reference pages are left untouched, so hover hints don't shift onto the wrong word |
+| **Comment metadata untouched** | In comment sections only the sentence bodies are translated; other data labels stay in the original language |
 | **Real-time progress** | Node-level progress bar in the banner + toolbar badge, cancellable anytime |
 | **Usage statistics** | Tracks **today/month** real token usage, and computes **real cost** at the latest official price × peak/off-peak |
 | **Multi-language** | 11 target languages supported |
@@ -29,9 +29,29 @@ A browser extension (Manifest V3) for **Edge / Chrome**. Translations see full-p
 
 ## Screenshots
 
+### Basic demo
+
 | Translate offer | Translation done (light) | Dark mode | Bilingual view |
 |---|---|---|---|
 | ![Translate offer](screenshots/shot-offer.png) | ![Translation done](screenshots/shot-done-light.png) | ![Dark mode](screenshots/shot-done-dark.png) | ![Bilingual](screenshots/shot-bilingual.png) |
+
+### Deep demo: mixed complex page
+
+The above shows the basics. The page below **combines body text, Shadow-DOM component cards, an iframe, a code block, form fields, comment metadata and entity links**, and shows where the translation goes deep and where it deliberately stops.
+
+| Translate offer | Translation done (light) | Dark mode | Bilingual view |
+|---|---|---|---|
+| ![Translate offer](screenshots/demo-offer.png) | ![Translation done](screenshots/demo-done-light.png) | ![Dark mode](screenshots/demo-done-dark.png) | ![Bilingual](screenshots/demo-bilingual.png) |
+
+**On this complex page, the extension:**
+
+- **Translates deeply**: body text, comment bodies, and component cards wrapped in **Shadow DOM**.
+- **Deliberately leaves alone** (handled selectively, so the page isn't broken):
+  - `iframe`-embedded standalone pages — kept as-is
+  - Code blocks — kept as-is
+  - Form inputs / search boxes — kept as-is
+  - Comment **author / time / like-count** metadata — kept in the original
+  - **Entity / tooltip links** pointing to other reference pages — not shifted onto the wrong word
 
 ## Installation
 
