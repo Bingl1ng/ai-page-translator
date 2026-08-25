@@ -29,9 +29,29 @@
 
 ## 截图
 
+### 基础演示
+
 | 询问是否翻译 | 翻译完成（浅色） | 深色模式 | 双语对照 |
 |---|---|---|---|
 | ![询问翻译](screenshots/shot-offer.png) | ![翻译完成](screenshots/shot-done-light.png) | ![深色模式](screenshots/shot-done-dark.png) | ![双语对照](screenshots/shot-bilingual.png) |
+
+### 深度演示：混合复杂页面
+
+上面是基础效果。下面用一页**同时包含正文、Shadow DOM 组件卡片、iframe、代码块、表单输入框、评论元数据、实体链接**的复杂页面，展示 AI 翻译"**该翻哪里**"和"**不该翻哪里**"的判断力。
+
+| 询问翻译 | 翻译完成（浅色） | 深色模式 | 双语对照 |
+|---|---|---|---|
+| ![询问翻译](screenshots/demo-offer.png) | ![翻译完成](screenshots/demo-done-light.png) | ![深色模式](screenshots/demo-done-dark.png) | ![双语对照](screenshots/demo-bilingual.png) |
+
+**在这套复杂页面里，扩展会：**
+
+- **深入翻译**：正文、评论正文，以及封装在 **Shadow DOM** 里的组件卡片都能译到位。
+- **明确不碰**（有选择地处理，避免把页面搞坏）：
+  - `iframe` 嵌入的独立页面 —— **保持原文**
+  - 代码块 —— **保持原文**（翻译代码会毁掉它）
+  - 表单输入框 / 搜索框 —— **保持原文**（避免干扰输入）
+  - 评论的**作者名 / 时间 / 点赞数**等元数据 —— **保留原文**
+  - 带 tooltip 或指向战队 / 选手 / 赛事资料页的**实体链接** —— **不被改成错词**
 
 ## 安装
 
