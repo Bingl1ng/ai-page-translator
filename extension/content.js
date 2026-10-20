@@ -108,6 +108,7 @@
   const blockFailedRetries = new Map(); // Element 块 -> 自动重试次数
   const blockSkipRetry = new Set();     // 重试超限永久失败块
   let totalNodes = 0, doneNodes = 0;    // 节点级进度（applyBatch 累计，阶段二进度条用）
+  let staleSkips = 0;                   // 本轮因页面改写/节点断开而跳过的落地数（SPA 跳转的迹象）
   let sessionInChars = 0, sessionOutChars = 0, sessionCost = 0; // 本页累计用量与真实成本（重翻/重试/增量均计入，随 status/broadcast 上报）
 
   // ================= 重载还原持久化（sessionStorage） =================
@@ -560,9 +561,11 @@
         setProgress(currentBatch, batches.length, errorCount);
         const res = await sendBatch(batches[i], direction);
         if (abortRequested) break;
-        applyBatch(batches[i], res.translated, res.failed, true);
-        errorCount = failedCount();
-        if (res.failed && res.failed.length && res.message) lastErrorMsg = res.message;
+        try {
+          applyBatch(batches[i], res.translated, res.failed, true);
+          errorCount = failedCount();
+          if (res.failed && res.failed.length && res.message) lastErrorMsg = res.message;
+        } catch (e) { /* 单批落地异常不中断后续批次 */ }
       }
       return batches.length;
     }
@@ -576,9 +579,12 @@
         const idx = sent++;
         sendBatch(batches[idx], direction).then(function (res) {
           if (abortRequested) return; // 取消：在途结果丢弃，不再 apply
-          applyBatch(batches[idx], res.translated, res.failed, true);
-          errorCount = failedCount();
-          if (res.failed && res.failed.length && res.message) lastErrorMsg = res.message;
+          try {
+            applyBatch(batches[idx], res.translated, res.failed, true);
+            errorCount = failedCount();
+            if (res.failed && res.failed.length && res.message) lastErrorMsg = res.message;
+          } catch (e) { /* 单批落地异常也不能卡死窗口（completed 在 finally 推进） */ }
+        }).catch(function () {}).finally(function () {
           completed++;
           currentBatch = completed;
           setProgress(completed, n, errorCount);
@@ -609,9 +615,13 @@
     if (isBilingual()) { applyBatchBlocks(batch, translatedList, failedList, withProgress); return; } // 双语走块级
     const failedSet = failedList && (Array.isArray(failedList) ? new Set(failedList) : failedList);
     batch.nodes.forEach(function (node, i) {
-      if (!node.isConnected) { if (withProgress) doneNodes++; return; }
+      // 批次往返途中页面被改写（SPA 跳转 / 前端重渲染）：节点已断开，或文字已不是当初发出去的那段。
+      // 此时绝不能把「按旧文本算出的译文」写上去——那会把上一页的译文盖到新页面的文字上。
+      // 跳过且不标记 handled，留给本轮末尾的补采/增量按新文本重翻。
+      if (!node.isConnected || node.data !== batch.texts[i]) { staleSkips++; if (withProgress) doneNodes++; return; }
       if (failedSet && failedSet.has(i)) {
-        if (!origMap.has(node)) origMap.set(node, node.data);
+        // 以"这次实际发出去的原文"为准：节点若在上一页被译过、又被页面改写，旧 origMap 写回会还原成上一页文字
+        origMap.set(node, node.data);
         failedNodes.set(node, node.data);
         // 自动重试预算：失败计数，超阈值后移入 skipRetry（不再被增量/兜底扫描自动重发）
         const c = (failedRetries.get(node) || 0) + 1;
@@ -621,17 +631,18 @@
         return;
       }
       const t = translatedList && translatedList[i];
-      if (typeof t !== 'string') { if (withProgress) doneNodes++; return; }
+      if (typeof t !== 'string') { if (origMap.has(node)) origMap.set(node, node.data); if (withProgress) doneNodes++; return; }
       if (t === node.data) {
         // 模型原样返回（缩写/单位/URL 等无需翻译）：标记已处理，避免被兜底扫描每 4s 重发
         // （v1.5.2 横幅闪烁暴露；此前一直在静默烧 API 费用）。
         handled.add(node);
         transMap.set(node, t);
+        if (origMap.has(node)) origMap.set(node, node.data); // 节点被页面改写过：还原以当前文字为准
         clearNodeFailure(node);
         if (withProgress) doneNodes++;
         return;
       }
-      if (!origMap.has(node)) origMap.set(node, node.data);
+      origMap.set(node, node.data); // 每次落地都以当前原文为准（SPA 改写后不能沿用上一页的原文）
       node.data = t;
       persistNode(node, origMap.get(node), t); // #13：写 sessionStorage，内容脚本重启后可还原
       handled.add(node);
@@ -648,10 +659,12 @@
     ensureAitrCnStyle();
     const failedSet = failedList && (Array.isArray(failedList) ? new Set(failedList) : failedList);
     batch.nodes.forEach(function (el, i) {
-      if (!el.isConnected) { if (withProgress) doneNodes++; return; }
+      // 同 applyBatch：块在往返途中被改写/移除时，旧译文不能落地（会盖到新页面的块上）
+      const curText = el.innerText || '';
+      if (!el.isConnected || curText !== batch.texts[i]) { staleSkips++; if (withProgress) doneNodes++; return; }
       if (failedSet && failedSet.has(i)) {
-        if (!blockOrigMap.has(el)) blockOrigMap.set(el, el.innerText || '');
-        blockFailed.set(el, el.innerText || '');
+        if (!blockOrigMap.has(el)) blockOrigMap.set(el, curText);
+        blockFailed.set(el, curText);
         const c = (blockFailedRetries.get(el) || 0) + 1;
         if (c >= MAX_AUTO_RETRIES) { blockSkipRetry.add(el); blockFailedRetries.delete(el); }
         else blockFailedRetries.set(el, c);
@@ -660,7 +673,7 @@
       }
       const t = translatedList && translatedList[i];
       if (typeof t !== 'string') { if (withProgress) doneNodes++; return; }
-      const orig = (el.innerText || '').trim();
+      const orig = curText.trim();
       if (t.trim() === orig) {
         const ex = findExistingBlockTranslation(el); if (ex) ex.remove(); // A7：原样返回也应清掉旧译文块，避免残留
         blockMap.set(el, t); blockEls.add(el); clearBlockFailure(el); if (withProgress) doneNodes++; return;
@@ -672,7 +685,7 @@
       div.className = 'aitr-cn'; div.setAttribute('data-aitr-cn', ''); div.textContent = t;
       if (INLINE_INSERT_TAGS.has(el.tagName)) el.appendChild(div);        // table/list/dl 内须作子元素
       else el.insertAdjacentElement('afterend', div);                    // 块下一行
-      if (!blockOrigMap.has(el)) blockOrigMap.set(el, el.innerText || '');
+      if (!blockOrigMap.has(el)) blockOrigMap.set(el, curText);
       blockMap.set(el, t); blockEls.add(el); clearBlockFailure(el);
       sessionOutChars += t.length;
       if (withProgress) doneNodes++;
@@ -684,7 +697,14 @@
   function collectRestoreEntries() {
     const out = [];
     const seen = new Set();
-    origMap.forEach(function (orig, node) { seen.add(node); out.push({ node: node, orig: orig }); });
+    origMap.forEach(function (orig, node) {
+      // 节点若已被页面改写（当前内容不是我们写上去的译文），说明它属于新页面内容，
+      // 不能把上一页的原文还原上去
+      const t = transMap.get(node);
+      if (t !== undefined && node.data !== t) return;
+      seen.add(node);
+      out.push({ node: node, orig: orig });
+    });
     if (persisted && persisted.size) {
       persisted.forEach(function (e) {
         const node = nodeFromPath(e.p);
@@ -724,10 +744,11 @@
   // 重新翻译：先写回原文再清表重翻。
   // 绝不能直接清 transMap 后 translatePage()——已译节点当前 data 是译文，直接重采会把译文当原文二次翻译。
   function retranslate() {
-    if (translating) return;
+    if (isBusy()) return; // 增量翻译(applying)期间也禁止：否则两套流程会同时写同一批节点
     if (!config.apiKey) { showBanner('nokey'); return; }
     for (const [node, orig] of origMap) {
-      if (node.isConnected) node.data = orig;
+      const t = transMap.get(node);
+      if (node.isConnected && (t === undefined || node.data === t)) node.data = orig; // 已被页面改写的节点跳过
     }
     document.querySelectorAll('div.aitr-cn[data-aitr-cn]').forEach(function (el) { el.remove(); }); // 双语：先移除旧译文块
     origMap.clear();
@@ -804,6 +825,15 @@
   }
 
   // ================= 翻译主流程 =================
+  // 找出「还没翻、也不是失败待重试」的内容。供收尾补采：翻译途中页面被改写（SPA 跳转/重渲染）后，
+  // applyBatch 会丢弃对不上的旧译文，这些新内容必须在报完成之前补翻。
+  function pendingUnits() {
+    if (isBilingual()) {
+      return collectBlocks().filter(function (b) { return !blockFailed.has(b) && !blockSkipRetry.has(b); });
+    }
+    return collectUnhandledTextNodes().filter(function (n) { return !failedNodes.has(n) && !skipRetry.has(n); });
+  }
+
   async function translatePage() {
     if (translating) return;
     if (!document.body) return; // body 未就绪（document_start 早注入）→ 不空翻不误报完成，稍后由 init 兜底触发
@@ -824,6 +854,7 @@
     translating = true;
     translated = false;
     currentBatch = 0; totalBatch = 0; errorCount = 0; lastErrorMsg = '';
+    staleSkips = 0;
     failedNodes.clear();
     retryLog.length = 0;
     totalNodes = nodes.length; doneNodes = 0;
@@ -869,8 +900,20 @@
         if (!sent) break;
       }
     }
+    // 页面在翻译途中换了内容（SPA 跳转 / 前端重渲染）：staleSkips>0 说明有批次的原文已对不上，
+    // 旧译文按设计丢弃了。收尾前按新内容补采补翻（最多 2 轮）；否则会出现「横幅打勾，正文还是
+    // 英文 / 上一页译文」。正常页面 pendingUnits() 为空，这里零开销。
+    for (let extra = 0; !abortRequested && extra < 2; extra++) {
+      const more = pendingUnits();
+      if (!more.length) break;
+      totalNodes = doneNodes + more.length; // 进度单调：已完成的算进总量，补翻继续往上走
+      const moreBatches = isBilingual() ? buildBatchesFromBlocks(more) : buildBatches(more);
+      totalBatch = moreBatches.length; currentBatch = 0;
+      await runBatches(moreBatches, pageDirection);
+    }
+
     // 诊断：共享 DOM 属性暴露重试轮记录+方向（隔离世界内容主世界可读，调试用）
-    if (host) { try { host.setAttribute('data-aitr-retry', JSON.stringify({ dir: pageDirection, log: retryLog })); } catch (e) {} }
+    if (host) { try { host.setAttribute('data-aitr-retry', JSON.stringify({ dir: pageDirection, log: retryLog, stale: staleSkips })); } catch (e) {} }
 
     translating = false;
     translated = isBilingual() ? blockEls.size > 0 : totalBatch > 0;
@@ -924,7 +967,9 @@
       if (applying || translating) { pendingFlush = true; return; }
       scheduleFlush();
     });
-    observer.observe(document.body, OBSERVE_OPTS);
+    // 观察 documentElement 而不是 body：站点整体替换 <body>（部分框架/文档流站点会这么做）时，
+    // 绑在旧 body 上的观察器会永久失效，之后新渲染的内容再也不触发增量翻译。
+    observer.observe(document.documentElement, OBSERVE_OPTS);
     observeShadowRoots(document.body);
     // 锚点/history 导航（用户观察到 URL 变化）也会揭示内容 → 触发增量
     window.addEventListener('hashchange', onNavChange);
@@ -956,19 +1001,23 @@
         setState('translating');
       }
       (async function () {
-        for (const b of batches) {
-          if (abortRequested) break; // "取消"按钮生效，与主流程一致
-          const res = await sendBatch(b, pageDirection);
-          currentBatch++; errorCount = failedCount();
-          applyBatchBlocks(b, res.translated, res.failed, bannerVisible);
-          if (bannerVisible) setProgress(currentBatch, totalBatch, errorCount);
+        try {
+          for (const b of batches) {
+            if (abortRequested) break; // "取消"按钮生效，与主流程一致
+            const res = await sendBatch(b, pageDirection);
+            if (abortRequested) break; // 等待期间用户点了还原/取消：丢弃在途结果，别把原文又翻回去
+            currentBatch++; errorCount = failedCount();
+            try { applyBatchBlocks(b, res.translated, res.failed, bannerVisible); } catch (e) {}
+            if (bannerVisible) setProgress(currentBatch, totalBatch, errorCount);
+          }
+        } finally { // 任何异常都不能让 applying 永久卡 true（否则后续增量/兜底全部失效）
+          applying = false;
+          if (abortRequested) translationAborted = true; // 取消后禁止兜底/增量自动续翻
+          if (pendingFlush) { pendingFlush = false; scheduleFlush(); }
+          errorCount = failedCount();
+          if (bannerVisible) setState('done');
+          broadcast();
         }
-        applying = false;
-        if (abortRequested) translationAborted = true; // 取消后禁止兜底/增量自动续翻
-        if (pendingFlush) { pendingFlush = false; scheduleFlush(); }
-        errorCount = failedCount();
-        if (bannerVisible) setState('done');
-        broadcast();
       })();
       return;
     }
@@ -986,34 +1035,47 @@
       setState('translating');
     }
     (async function () {
-      for (const b of batches) {
-        if (abortRequested) break; // "取消"按钮生效，与主流程一致
-        const res = await sendBatch(b, pageDirection);
-        currentBatch++;
+      try {
+        for (const b of batches) {
+          if (abortRequested) break; // "取消"按钮生效，与主流程一致
+          const res = await sendBatch(b, pageDirection);
+          if (abortRequested) break; // 等待期间还原/取消：丢弃在途结果
+          currentBatch++;
+          errorCount = failedNodes.size;
+          try { applyBatch(b, res.translated, res.failed, bannerVisible); } catch (e) {} // withProgress → 节点级进度条同步更新
+          if (bannerVisible) setProgress(currentBatch, totalBatch, errorCount);
+        }
+      } finally {
+        applying = false;
+        if (abortRequested) translationAborted = true; // 取消后禁止兜底/增量自动续翻（与主流程取消语义一致）
+        if (pendingFlush) {
+          pendingFlush = false;
+          scheduleFlush();
+        }
         errorCount = failedNodes.size;
-        applyBatch(b, res.translated, res.failed, bannerVisible); // withProgress → 节点级进度条同步更新
-        if (bannerVisible) setProgress(currentBatch, totalBatch, errorCount);
+        flushPersist();
+        if (bannerVisible) setState('done'); // 收尾切回完成态，失败数/重试按钮自动反映
+        broadcast();
       }
-      applying = false;
-      if (abortRequested) translationAborted = true; // 取消后禁止兜底/增量自动续翻（与主流程取消语义一致）
-      if (pendingFlush) {
-        pendingFlush = false;
-        scheduleFlush();
-      }
-      errorCount = failedNodes.size;
-      flushPersist();
-      if (bannerVisible) setState('done'); // 收尾切回完成态，失败数/重试按钮自动反映
-      broadcast();
     })();
   }
 
   // 兜底定时扫描：覆盖后挂 shadow root、翻译窗口期漏采等 observer 管不到的情况。
   // 仅页面已翻译且空闲时跑；没新节点时 collectUnhandledTextNodes 返回空，零 API 调用。
   let safetyTimer = null;
+  // 清理已从 DOM 移除的节点记账：SPA 长时间跳转时 origMap/handled 会无限膨胀，
+  // 既慢又会让「已有译文」的判断失真。
+  function pruneDetached() {
+    origMap.forEach(function (v, n) { if (!n.isConnected) { origMap.delete(n); transMap.delete(n); handled.delete(n); } });
+    failedNodes.forEach(function (v, n) { if (!n.isConnected) { failedNodes.delete(n); skipRetry.delete(n); failedRetries.delete(n); } });
+    blockEls.forEach(function (n) { if (!n.isConnected) { blockEls.delete(n); blockMap.delete(n); blockOrigMap.delete(n); } });
+    blockFailed.forEach(function (v, n) { if (!n.isConnected) { blockFailed.delete(n); blockSkipRetry.delete(n); blockFailedRetries.delete(n); } });
+  }
   function ensureSafetyScan() {
     if (safetyTimer) return;
     safetyTimer = setInterval(function () {
       if (!translated || isBusy() || document.hidden || translationAborted) return;
+      pruneDetached();
       flushIncremental();
     }, 4000);
   }
@@ -1038,48 +1100,77 @@
     shadow = host.attachShadow({ mode: 'open' });
     shadow.innerHTML =
       '<style>' +
-      ':host{all:initial;position:fixed;top:0;left:0;right:0;z-index:2147483647;display:none;font-family:system-ui,"Segoe UI",Roboto,"Microsoft YaHei",sans-serif;}' +
-      '.bar{display:flex;align-items:center;gap:12px;padding:11px 18px;background:#f8f9fb;color:#202124;' +
-      'box-shadow:0 4px 18px rgba(0,0,0,.14);border:1px solid #e6e9ee;border-top:none;border-radius:0 0 12px 12px;font-size:13px;line-height:1.45;flex-wrap:wrap;transition:background .25s ease;animation:aitr-drop .25s ease-out;}' +
-      '.txt{flex:1;min-width:160px;}' +
-      '.actions{display:flex;gap:8px;align-items:center;}' +
-      '.cost{display:block;margin-top:8px;font-size:12px;color:#8a8a8a;}' +
-      'button{font:inherit;font-weight:600;border:1px solid #d5dae1;background:#fff;color:#1a73e8;border-radius:10px;padding:5px 16px;cursor:pointer;transition:background .2s ease,transform .2s ease,box-shadow .2s ease;}' +
-      'button:hover{background:#f0f4ff;transform:translateY(-1px);}' +
-      'button:active{transform:scale(.97);}' +
-      'button.primary{background:#1a73e8;border-color:#1a73e8;color:#fff;}' +
-      'button.primary:hover{background:#1765cc;}' +
-      'button.ghost{border-color:transparent;background:transparent;color:#5f6368;}' +
-      'button:disabled{opacity:.5;cursor:default;}' +
-      '.spinner{width:13px;height:13px;border:2px solid #c9cdd4;border-top-color:#1a73e8;border-radius:50%;animation:aitr-spin .8s linear infinite;display:inline-block;vertical-align:-2px;}' +
+      // 液态玻璃：横幅浮在网页之上，backdrop-filter 直接折射页面内容（弹窗做不到这一点）
+      ':host{all:initial;position:fixed;top:0;left:0;right:0;z-index:2147483647;display:none;pointer-events:none;' +
+      'font-family:"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,"Microsoft YaHei UI","Microsoft YaHei",sans-serif;' +
+      '--aitr-glass:rgba(255,255,255,.62);--aitr-glass-2:rgba(255,255,255,.34);--aitr-glass-hover:rgba(255,255,255,.55);' +
+      '--aitr-brd:rgba(255,255,255,.72);--aitr-brd-2:rgba(255,255,255,.55);' +
+      '--aitr-ink:#10131a;--aitr-ink-2:#414a5c;--aitr-ink-3:#6b7486;' +
+      '--aitr-brand:#2f62e6;--aitr-brand-2:#214fd0;--aitr-brand-soft:rgba(47,98,230,.13);--aitr-on-brand:#fff;' +
+      '--aitr-hi:inset 0 1px 0 rgba(255,255,255,.82);' +
+      '--aitr-shadow:0 14px 40px rgba(15,25,50,.18),0 2px 8px rgba(15,25,50,.08);}' +
+      '.bar{pointer-events:auto;position:relative;width:calc(100% - 20px);max-width:1040px;margin:10px auto;overflow:hidden;' +
+      'background:linear-gradient(180deg,rgba(255,255,255,.20),rgba(255,255,255,0) 52%),var(--aitr-glass);' +
+      'color:var(--aitr-ink);border:1px solid var(--aitr-brd);border-radius:18px;' +
+      'box-shadow:var(--aitr-shadow),var(--aitr-hi);' +
+      '-webkit-backdrop-filter:blur(24px) saturate(1.8);backdrop-filter:blur(24px) saturate(1.8);' +
+      'font-size:13px;line-height:1.45;transition:background .2s ease;animation:aitr-drop .22s ease-out;}' +
+      '.inner{display:flex;align-items:center;gap:10px;padding:8px 12px;flex-wrap:wrap;}' +
+      '.mark{width:22px;height:22px;border-radius:7px;flex:none;display:grid;place-items:center;' +
+      'background:var(--aitr-brand-soft);color:var(--aitr-brand);font-size:11px;font-weight:700;letter-spacing:.5px;' +
+      'border:1px solid var(--aitr-brd-2);box-shadow:inset 0 1px 0 rgba(255,255,255,.45);}' +
+      '.txt{flex:1;min-width:180px;}' +
+      '.actions{display:flex;gap:7px;align-items:center;flex:none;}' +
+      '.cost{margin-left:4px;font-size:11.5px;color:var(--aitr-ink-2);font-variant-numeric:tabular-nums;}' +
+      'button{font:inherit;font-size:12.5px;font-weight:600;letter-spacing:-.005em;border:1px solid var(--aitr-brd-2);' +
+      'background:linear-gradient(180deg,rgba(255,255,255,.26),rgba(255,255,255,0) 60%),var(--aitr-glass-2);' +
+      'color:var(--aitr-ink-2);border-radius:10px;padding:6px 13px;cursor:pointer;' +
+      'box-shadow:inset 0 1px 0 rgba(255,255,255,.5);' +
+      'transition:background .15s ease,border-color .15s ease,color .15s ease,transform .12s ease,box-shadow .15s ease;}' +
+      'button:hover{background:var(--aitr-glass-hover);color:var(--aitr-ink);border-color:var(--aitr-brd);}' +
+      'button:active{transform:scale(.985);}' +
+      'button:focus-visible{outline:2px solid var(--aitr-brand);outline-offset:2px;}' +
+      'button.primary{background:linear-gradient(180deg,rgba(255,255,255,.30),rgba(255,255,255,.02) 55%),var(--aitr-brand);' +
+      'border-color:rgba(255,255,255,.24);color:var(--aitr-on-brand);' +
+      'box-shadow:0 8px 18px rgba(47,98,230,.30),inset 0 1px 0 rgba(255,255,255,.42),inset 0 -1px 0 rgba(0,0,0,.10);}' +
+      'button.primary:hover{background:linear-gradient(180deg,rgba(255,255,255,.30),rgba(255,255,255,.02) 55%),var(--aitr-brand-2);' +
+      'border-color:rgba(255,255,255,.24);color:var(--aitr-on-brand);}' +
+      'button.ghost{border-color:transparent;background:transparent;box-shadow:none;color:var(--aitr-ink-3);padding:6px 9px;font-size:15px;line-height:1;font-weight:500;}' +
+      'button.ghost:hover{background:var(--aitr-glass-hover);color:var(--aitr-ink);border-color:transparent;}' +
+      'button:disabled{opacity:.45;cursor:default;transform:none;}' +
+      '.spinner{width:12px;height:12px;border:2px solid rgba(128,134,139,.4);border-top-color:var(--aitr-brand);border-radius:50%;animation:aitr-spin .8s linear infinite;display:inline-block;vertical-align:-2px;}' +
       '@keyframes aitr-spin{to{transform:rotate(360deg)}}' +
-      // 进度条：占满一行，细条 + 填充；节点数未知（方向预读期）用不确定滑动条
-      '.progress{flex-basis:100%;height:3px;background:rgba(128,134,139,.25);border-radius:2px;overflow:hidden;display:none;margin:-2px 0 4px;}' +
-      '.progress-fill{height:100%;width:0%;background:#1a73e8;transition:width .3s ease;}' +
+      // 进度条：玻璃胶囊顶部内嵌 2px 发光线
+      '.progress{position:absolute;top:0;left:14px;right:14px;height:2px;overflow:hidden;display:none;border-radius:2px;}' +
+      '.progress-fill{height:100%;width:0%;background:linear-gradient(90deg,#6f9bff,var(--aitr-brand));box-shadow:0 0 8px rgba(47,98,230,.5);transition:width .3s ease;}' +
       '.progress.indet .progress-fill{width:35%;animation:aitr-slide 1.2s ease-in-out infinite;}' +
       '@keyframes aitr-slide{0%{margin-left:-35%}100%{margin-left:100%}}' +
-      // 完成动画：上滑淡入（底色与询问/翻译中一致，不染色——用户要求去除浅绿）
-      '.bar.aitr-done-pop{animation:aitr-pop .45s ease;}' +
-      '@keyframes aitr-pop{0%{transform:translateY(-6px);opacity:.5}60%{transform:translateY(1px);opacity:1}100%{transform:translateY(0)}}' +
-      '@keyframes aitr-drop{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}' +
+      // 完成动画：上滑淡入（不改变底色）
+      '.bar.aitr-done-pop{animation:aitr-pop .3s ease;}' +
+      '@keyframes aitr-pop{0%{transform:translateY(-4px);opacity:.55}60%{transform:translateY(1px);opacity:1}100%{transform:translateY(0)}}' +
+      '@keyframes aitr-drop{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}' +
       // 暗色模式
-      '@media (prefers-color-scheme: dark){' +
-      '.bar{background:#202124;color:#e8eaed;border-bottom-color:#3c4043;}' +
-      'button{border-color:#5f6368;background:#292a2d;color:#8ab4f8;}' +
-      'button:hover{background:#35363a;}' +
-      'button.primary{background:#8ab4f8;border-color:#8ab4f8;color:#202124;}' +
-      'button.primary:hover{background:#9cc1f9;}' +
-      'button.ghost{color:#9aa0a6;}' +
-      '.cost{color:#9aa0a6;}' +
-      '.spinner{border-color:#5f6368;border-top-color:#8ab4f8;}' +
-      '.progress{background:#3c4043;}' +
-      '.progress-fill{background:#8ab4f8;}' +
-      '}' +
+      '@media (prefers-color-scheme: dark){:host{' +
+      '--aitr-glass:rgba(22,25,33,.74);--aitr-glass-2:rgba(255,255,255,.08);--aitr-glass-hover:rgba(255,255,255,.14);' +
+      '--aitr-brd:rgba(255,255,255,.16);--aitr-brd-2:rgba(255,255,255,.14);' +
+      '--aitr-ink:#eef1f7;--aitr-ink-2:#c3c9d5;--aitr-ink-3:#939bad;' +
+      '--aitr-brand:#9db9ff;--aitr-brand-2:#b8ccff;--aitr-brand-soft:rgba(157,185,255,.16);--aitr-on-brand:#0f1420;' +
+      '--aitr-hi:inset 0 1px 0 rgba(255,255,255,.16);' +
+      '--aitr-shadow:0 18px 44px rgba(0,0,0,.5),0 2px 8px rgba(0,0,0,.35);}' +
+      '.bar{background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,0) 52%),var(--aitr-glass);}' +
+      'button:not(.primary):not(.ghost){box-shadow:inset 0 1px 0 rgba(255,255,255,.10);}}' +
+      // 不支持 backdrop-filter 时退回接近实色
+      '@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))){.bar{background:rgba(255,255,255,.97);}}' +
+      '@media (prefers-color-scheme: dark){@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))){.bar{background:rgba(24,27,35,.97);}}}' +
+      '@media (prefers-reduced-motion: reduce){*{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important;}}' +
       '</style>' +
       '<div class="bar">' +
       '<div class="progress"><div class="progress-fill"></div></div>' +
+      '<div class="inner">' +
+      '<span class="mark" aria-hidden="true">译</span>' +
       '<div class="txt"></div>' +
       '<div class="actions"></div>' +
+      '</div>' +
       '</div>';
     bannerEl = shadow.querySelector('.bar');
     textEl = shadow.querySelector('.txt');

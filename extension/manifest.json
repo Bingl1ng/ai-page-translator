@@ -1,8 +1,8 @@
-﻿{
+{
   "manifest_version": 3,
   "name": "AI 页面翻译",
-  "version": "1.7.3",
-  "description": "用 AI 把网页翻译成你选的语言，比机翻更自然。类似 Edge 自带翻译，但由 DeepSeek AI 驱动。",
+  "version": "1.8.0",
+  "description": "用 DeepSeek 把网页翻译成你选的语言。需要自备 API Key。",
   "permissions": ["storage", "activeTab"],
   "host_permissions": ["https://api.deepseek.com/*"],
   "optional_host_permissions": ["https://*/*"],

@@ -1,125 +1,70 @@
-# AI Page Translator (AI 页面翻译)
+# AI Page Translator
 
-English | [中文](README.md)
+A browser extension for Edge / Chrome (Manifest V3) that translates whole pages with DeepSeek. You need your own API key.
 
-> Translate entire web pages with AI — more natural than built-in machine translation.
-> Powered by **DeepSeek**, requires your own DeepSeek API Key.
+## What it does
 
-A browser extension (Manifest V3) for **Edge / Chrome**. Translations see full-page context so terminology stays consistent across paragraphs, and SPA dynamic content is translated in real time.
+Page text goes to the model in batches, so terms and tone stay consistent across paragraphs. Large pages translate concurrently; SPA navigation, dynamically loaded content and open Shadow DOM are followed automatically. You can restore the original text at any time.
 
-## Features
-
-| Feature | Description |
-|---|---|
-| **Natural AI translation** | The whole page goes through an LLM for fluent, idiomatic output |
-| **Full-page context** | Small pages translate in one pass; large pages analyze the translation "direction" first, keeping terms consistent across paragraphs |
-| **Adaptive concurrency** | Large pages translate concurrently — measured **2–7× faster** |
-| **Incremental translation** | New content from SPA navigation / dynamic loading / Shadow DOM / tab switches auto-translates |
-| **Auto-retry on failure** | Transient API errors auto-retry; any remaining failures can be retried in one click |
-| **Restore after restart** | Translated pages can be restored to the original text even after an extension update / reload |
-| **Bilingual view** | Switch to a "bilingual" display mode — keeps the original text and shows the translation on a line below each paragraph, great for papers / language learning / checking the source. Default remains "replace" |
-| **Entity / tooltip links preserved** | Links with tooltips or pointing to other reference pages are left untouched, so hover hints don't shift onto the wrong word |
-| **Comment metadata untouched** | In comment sections only the sentence bodies are translated; other data labels stay in the original language |
-| **Real-time progress** | Node-level progress bar in the banner + toolbar badge, cancellable anytime |
-| **Usage statistics** | Tracks **today/month** real token usage, and computes **real cost** at the latest official price × peak/off-peak |
-| **Multi-language** | 11 target languages supported |
-| **Dark mode** | Banner / popup / options adapt to the system dark mode |
-| **Per-site settings** | Set "always translate" / "never translate" per site, overriding the global setting |
-| **Privacy-friendly** | API Key stays on your machine, only sent to the configured endpoint, no telemetry |
+Code blocks, inputs and iframes are left alone. In comments only the text is translated; author names and timestamps stay as they are. A bilingual mode keeps the original and puts the translation below each paragraph.
 
 ## Screenshots
 
-### Basic demo
+| Before | After |
+|---|---|
+| ![Offer](screenshots/shot-offer.png) | ![Translated](screenshots/shot-done-light.png) |
 
-| Translate offer | Translation done (light) | Dark mode | Bilingual view |
-|---|---|---|---|
-| ![Translate offer](screenshots/shot-offer.png) | ![Translation done](screenshots/shot-done-light.png) | ![Dark mode](screenshots/shot-done-dark.png) | ![Bilingual](screenshots/shot-bilingual.png) |
+| Dark mode | Bilingual |
+|---|---|
+| ![Dark](screenshots/shot-done-dark.png) | ![Bilingual](screenshots/shot-bilingual.png) |
 
-### Deep demo: mixed complex page
+| Popup | Settings |
+|---|---|
+| ![Popup](screenshots/shot-popup.png) | ![Settings](screenshots/shot-options.png) |
 
-The above shows the basics. The page below **combines body text, Shadow-DOM component cards, an iframe, a code block, form fields, comment metadata and entity links**, and shows where the translation goes deep and where it deliberately stops.
+## Install
 
-| Translate offer | Translation done (light) | Dark mode | Bilingual view |
-|---|---|---|---|
-| ![Translate offer](screenshots/demo-offer.png) | ![Translation done](screenshots/demo-done-light.png) | ![Dark mode](screenshots/demo-done-dark.png) | ![Bilingual](screenshots/demo-bilingual.png) |
+1. Download the latest zip from [Releases](../../releases) and unzip it.
+2. Open `edge://extensions` (`chrome://extensions` in Chrome).
+3. Turn on Developer mode, click "Load unpacked", and pick the unzipped folder (the one with `manifest.json`).
+4. Click the extension icon → Settings and paste your DeepSeek API key.
 
-**On this complex page, the extension:**
+You can turn Developer mode off afterwards. Turn it back on to load an updated version.
 
-- **Translates deeply**: body text, comment bodies, and component cards wrapped in **Shadow DOM**.
-- **Deliberately leaves alone** (handled selectively, so the page isn't broken):
-  - `iframe`-embedded standalone pages — kept as-is
-  - Code blocks — kept as-is
-  - Form inputs / search boxes — kept as-is
-  - Comment **author / time / like-count** metadata — kept in the original
-  - **Entity / tooltip links** pointing to other reference pages — not shifted onto the wrong word
+## Use
 
-## Installation
+Open a foreign-language page. A bar appears at the top; click "Translate" and you can cancel at any time. When it finishes you can show the original, re-translate, or retry the parts that failed.
 
-**Option 1: Load the release package (recommended)**
+New content from in-site navigation is translated automatically. If you cancel or restore, the page stays put until you click Translate again.
 
-1. Download `ai-page-translator-v1.7.3.zip` from [Releases](../../releases) and extract
-2. Open `edge://extensions` (Chrome: `chrome://extensions`)
-3. Turn on **"Developer mode"** (bottom-left in Edge)
-4. Click **"Load unpacked"** and select the extracted `extension` folder
-5. Click the extension icon → select this extension → choose **"Settings"** at the bottom of the panel → enter your DeepSeek API Key → **Test connection**
+## Settings
 
-> You can turn **off** "Developer mode" after installation — the extension keeps working. Turn it back on only when you need to reload an updated version.
-
-**Option 2: Clone for development**
-
-```bash
-git clone https://github.com/Bingl1ng/ai-page-translator
-# No build step needed — the extension/ folder is directly loadable
-```
-
-## Configuration
-
-- **API Key**: Get one at the [DeepSeek platform](https://platform.deepseek.com) (`sk-` prefix). Stored only in local `chrome.storage.local`.
-- **Model**: Default `deepseek-v4-flash` (thinking mode auto-disabled — fast and stable). Can be changed to other DeepSeek models.
-- **Target language**: Default Simplified Chinese; 11 languages supported.
-- **Display mode**: `Replace` (default, translation replaces the page text) or `Bilingual` (keeps the original, translation below each paragraph).
-- **Auto-translate**: Optionally auto-translate foreign pages (off by default).
-- **Per-site settings**: e.g. "never translate" / "always translate" for a specific site.
-
-## Privacy & Security
-
-- **Key stays local**: stored only in the extension's local storage, sent only to the configured API endpoint (DeepSeek official by default). Open-source and unminified — you can audit the code.
-- **Content**: translation sends page text to DeepSeek. **Do not use on pages containing sensitive or confidential content.**
-- **No telemetry**: the extension uploads no usage data; the only outbound request is the translation API call.
-- **Custom API endpoint**: defaults to DeepSeek official only. If you switch to another OpenAI-compatible endpoint, the extension requests access to that domain (browser confirmation prompt) — only use providers you trust.
-- **Recommendation**: create a **dedicated API Key** for this extension (not your main account key) and set a spending limit — if it ever leaks, the damage is bounded and you can revoke it anytime.
+- **API key**: from the [DeepSeek platform](https://platform.deepseek.com); stored on this device.
+- **Model**: `deepseek-v4-flash` by default.
+- **Target language**: 11 options.
+- **Display mode**: replace, or bilingual.
+- **Sites**: auto-translate or never-translate per domain.
 
 ## Cost
 
-- Uses **your own DeepSeek API quota**, billed per token (DeepSeek is cheap, with **half-price off-peak hours** — peak is Mon–Fri 9:00–12:00 & 14:00–18:00; the rest of the time and weekends are discounted).
-- Popup shows **today / this-month / this-page real cost (CNY)** computed from **latest official price × peak/off-peak**, separating input cache-hit / miss / output — a measured true value, not an estimate.
-- Translating a full arXiv paper (~80k characters) costs a few cents (usually under ¥0.01 off-peak).
+Translation uses your own API quota and is billed per token. The popup shows this page, today and this month, using the official price and peak/off-peak rates.
 
-## Project Structure
+## Privacy
+
+The API key stays in local extension storage and is only sent to the API address you configure. Page text goes to that provider when you translate. There are no other network requests and no telemetry.
+
+## Project layout
 
 ```
-extension/    The loadable extension itself (no build step)
-  manifest.json
-  content.js   Content script: collect / batch / incremental / banner
-  background.js  Service Worker: DeepSeek API / usage stats / badge
-  config.js    Shared config & utilities
-  options.*    Settings page
-  popup.*      Popup
-  icons/       Icons
-screenshots/   README screenshots
-dist/          Release zip
+extension/   the loadable extension
+screenshots/ README images
+dist/        release zip
 ```
 
-## Changelog
-
-See [CHANGELOG.md](CHANGELOG.md).
+No build step.
 
 ## License
 
-[MIT License](LICENSE)
+MIT. Part of the code was written with AI assistance.
 
-> Designed, decided, and accepted by the author; part of the code was developed with AI assistance.
-
-## Disclaimer
-
-This is an independent open-source project, **not an official DeepSeek product**. It uses DeepSeek's public API. Please comply with the [DeepSeek terms of service](https://platform.deepseek.com/terms) and the terms of the sites you translate. Translations are AI-generated — refer to the original text.
+Not an official DeepSeek product. Translations are generated; check the original for anything important.

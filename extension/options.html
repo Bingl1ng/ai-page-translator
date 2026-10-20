@@ -5,131 +5,339 @@
   <meta name="color-scheme" content="light dark">
   <title data-i18n="opt.title">AI 页面翻译 · 设置</title>
   <style>
-    body { font-family: system-ui, "Segoe UI", Roboto, "Microsoft YaHei", sans-serif; font-size: 14px; color: #202124; max-width: 520px; margin: 32px auto; padding: 0 20px; background: #fff; }
-    body { font-family: system-ui, "Segoe UI", Roboto, "Microsoft YaHei", sans-serif; font-size: 14px; color: #202124; max-width: 520px; margin: 32px auto; padding: 0 20px 40px; background: #fff; line-height: 1.5; animation: aitr-fade .35s ease-out; }
-    @keyframes aitr-fade { from { opacity: 0; } to { opacity: 1; } }
-    h1 { font-size: 17px; margin: 0 0 20px; font-weight: 700; letter-spacing: .2px; }
-    h2.section { font-size: 12px; font-weight: 700; color: #5f6368; letter-spacing: .8px; text-transform: uppercase; margin: 30px 0 12px; }
-    .field { margin-bottom: 18px; }
-    label { display: block; font-weight: 600; margin-bottom: 6px; color: #202124; }
-    input, select { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #dadce0; border-radius: 12px; font: inherit; background: #fff; color: inherit; transition: border-color .15s ease, box-shadow .15s ease; }
-    input:focus, select:focus { outline: 2px solid #1a73e8; border-color: transparent; }
-    .note { font-size: 12px; color: #5f6368; margin-top: 5px; line-height: 1.6; }
-    .actions { display: flex; gap: 10px; align-items: center; margin-top: 22px; }
-    button { padding: 9px 18px; border-radius: 12px; border: none; font: inherit; font-weight: 600; cursor: pointer; transition: transform .2s ease, box-shadow .2s ease, background .2s ease; }
-    button:hover { transform: translateY(-1px); }
-    button:active { transform: scale(.98); }
-    .primary { background: #1a73e8; color: #fff; box-shadow: 0 1px 2px rgba(26,115,232,.3); }
-    .primary:hover { background: #1765cc; box-shadow: 0 3px 8px rgba(26,115,232,.35); }
-    .secondary { background: #f1f3f4; color: #202124; }
-    .secondary:hover { background: #e8eaed; }
-    #result { margin-top: 12px; font-size: 13px; }
-    #result.ok { color: #188038; }
-    #result.err { color: #d93025; }
-    .box { background: #f8f9fb; border: 1px solid #eef0f3; border-radius: 14px; padding: 14px 16px; font-size: 12.5px; color: #3c4043; line-height: 1.75; margin-top: 30px; }
-    .site-list { list-style: none; padding: 0; margin: 8px 0; }
-    .site-list li { display: flex; align-items: center; gap: 14px; padding: 8px 12px; border: 1px solid #e3e6ea; border-radius: 10px; margin-bottom: 7px; font-size: 13px; transition: background .15s ease, border-color .15s ease; }
-    .site-list li:hover { background: #f8f9fb; }
-    .site-list .host { flex: 1; word-break: break-all; }
-    .site-list label { display: inline-flex; align-items: center; gap: 4px; font-weight: normal; margin: 0; font-size: 12px; cursor: pointer; }
-    .site-list input[type=checkbox] { width: auto; margin: 0; }
-    .site-list .del { cursor: pointer; color: #d93025; background: none; border: none; font-size: 13px; padding: 2px 8px; }
-    /* 分段胶囊：译文显示模式 */
-    .seg { display: inline-flex; width: 100%; border: 1px solid #dadce0; border-radius: 14px; overflow: hidden; background: #f1f3f4; }
-    .seg-btn { flex: 1; padding: 9px 0; border: none; background: transparent; color: #5f6368; font: inherit; font-weight: 500; cursor: pointer; text-align: center; transition: transform .2s ease, background .2s ease, color .2s ease; }
-    .seg-btn:hover { transform: scale(1.03); background: #e8eaed; }
-    .seg-btn:active { transform: scale(0.97); }
-    .seg-btn.is-active { background: #1a73e8; color: #fff; font-weight: 600; box-shadow: 0 1px 3px rgba(26,115,232,.4); }
-    .seg-btn:focus-visible { outline: 2px solid #1a73e8; outline-offset: 2px; }
+    :root {
+      --base: linear-gradient(155deg, #e8eefa 0%, #f6f8fc 42%, #ecf7f6 100%);
+      --ink: #10131a;
+      --ink-2: #3b4354;
+      --ink-3: #5f6879;
+      --brand: #2f62e6;
+      --brand-strong: #214fd0;
+      --brand-soft: rgba(47, 98, 230, .14);
+      --on-brand: #ffffff;
+      --ok: #16794e;
+      --err: #b8332a;
+      --danger: #b8332a;
+      --danger-soft: rgba(184, 51, 42, .10);
+      --glass: rgba(255, 255, 255, .50);
+      --glass-strong: rgba(255, 255, 255, .72);
+      --glass-brd: rgba(255, 255, 255, .74);
+      --glass-top: rgba(255, 255, 255, .26);
+      --glass-hi: inset 0 1px 0 rgba(255, 255, 255, .92), inset 0 -1px 0 rgba(255, 255, 255, .22);
+      --glass-shadow: 0 16px 38px rgba(24, 39, 75, .10), 0 2px 6px rgba(24, 39, 75, .05);
+      --line: rgba(16, 24, 40, .08);
+      --line-strong: rgba(16, 24, 40, .14);
+      --seg-track: rgba(16, 24, 40, .055);
+      --seg-thumb: rgba(255, 255, 255, .92);
+      --btn-2: rgba(255, 255, 255, .30);
+      --btn-2-brd: rgba(255, 255, 255, .72);
+    }
     @media (prefers-color-scheme: dark) {
-      body { background: #202124; color: #e8eaed; }
-      h1 { color: #e8eaed; }
-      h2.section { color: #9aa0a6; }
-      input, select { background: #292a2d; border-color: #5f6368; color: #e8eaed; }
-      .note { color: #9aa0a6; }
-      label { color: #e8eaed; }
-      .secondary { background: #35373b; color: #e8eaed; }
-      .secondary:hover { background: #40444a; }
-      .primary { background: #8ab4f8; color: #202124; }
-      .primary:hover { background: #9cc1f9; }
-      .seg { border-color: #5f6368; background: #292a2d; }
-      .seg-btn { color: #9aa0a6; }
-      .seg-btn:hover { background: #3c4043; }
-      .seg-btn.is-active { background: #8ab4f8; color: #202124; }
-      .box { background: #292a2d; border-color: #3c4043; color: #d2d4d7; }
-      .site-list li { border-color: #3c4043; }
-      .site-list .del { color: #f28b82; }
-      #result.ok { color: #81c995; }
-      #result.err { color: #f28b82; }
+      :root {
+        --base: linear-gradient(155deg, #0b0f17 0%, #111620 48%, #0c1317 100%);
+        --ink: #eef1f7;
+        --ink-2: #c3c9d5;
+        --ink-3: #939bad;
+        --brand: #9db9ff;
+        --brand-strong: #b8ccff;
+        --brand-soft: rgba(157, 185, 255, .16);
+        --on-brand: #0f1420;
+        --ok: #7ed3a6;
+        --err: #f08c84;
+        --danger: #f08c84;
+        --danger-soft: rgba(240, 140, 132, .12);
+        --glass: rgba(27, 31, 41, .50);
+        --glass-strong: rgba(31, 35, 46, .78);
+        --glass-brd: rgba(255, 255, 255, .14);
+        --glass-top: rgba(255, 255, 255, .06);
+        --glass-hi: inset 0 1px 0 rgba(255, 255, 255, .15), inset 0 -1px 0 rgba(255, 255, 255, .03);
+        --glass-shadow: 0 18px 42px rgba(0, 0, 0, .48), 0 2px 6px rgba(0, 0, 0, .3);
+        --line: rgba(255, 255, 255, .09);
+        --line-strong: rgba(255, 255, 255, .17);
+        --seg-track: rgba(0, 0, 0, .26);
+        --seg-thumb: rgba(255, 255, 255, .17);
+        --btn-2: rgba(255, 255, 255, .07);
+        --btn-2-brd: rgba(255, 255, 255, .14);
+      }
+    }
+    * { box-sizing: border-box; }
+    html { background: transparent; }
+    body {
+      font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+      font-size: 14px; line-height: 1.55; color: var(--ink); background: var(--base);
+      max-width: 640px; margin: 0 auto; padding: 32px 20px 48px; position: relative;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .aurora { position: fixed; inset: -20%; z-index: 0; pointer-events: none; overflow: hidden; }
+    .aurora i { position: absolute; display: block; border-radius: 50%; filter: blur(74px); opacity: .30; animation: aitr-drift 30s ease-in-out infinite alternate; }
+    .aurora .b1 { width: 460px; height: 460px; left: -150px; top: -150px; background: #7f9fe0; opacity: .34; }
+    .aurora .b2 { width: 380px; height: 380px; right: -160px; top: 260px; background: #86c6dc; opacity: .26; animation-delay: -10s; }
+    .aurora .b3 { width: 430px; height: 430px; left: -90px; bottom: -200px; background: #a99ae0; opacity: .26; animation-delay: -18s; }
+    .aurora .b4 { width: 320px; height: 320px; right: -80px; bottom: 40px; background: #9fd6bb; opacity: .20; animation-delay: -24s; }
+    .aurora .b5 { width: 360px; height: 360px; left: 38%; top: 42%; background: #e2b3a8; opacity: .18; animation-delay: -6s; }
+    @keyframes aitr-drift { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(26px, -20px, 0) scale(1.06); } }
+    @media (prefers-color-scheme: dark) {
+      .aurora i { opacity: .38; filter: blur(80px); }
+      .aurora .b2, .aurora .b3 { opacity: .30; }
+      .aurora .b4 { opacity: .20; }
+      .aurora .b5 { opacity: .18; }
+    }
+
+    .page { position: relative; z-index: 1; animation: aitr-fade .24s ease-out; }
+    @keyframes aitr-fade { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+
+    .page-head { display: flex; align-items: center; gap: 11px; margin: 0 2px 22px; }
+    .page-head .mark {
+      width: 34px; height: 34px; border-radius: 11px; flex: none;
+      background: linear-gradient(150deg, #5b86ff, #2750c9); color: #fff;
+      display: grid; place-items: center; font-size: 15px; font-weight: 700; letter-spacing: .5px;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), inset 0 -1px 0 rgba(0, 0, 0, .14), 0 6px 14px rgba(39, 80, 201, .26);
+    }
+    h1 { font-size: 19px; margin: 0; font-weight: 650; letter-spacing: -.015em; }
+
+    .card {
+      position: relative; isolation: isolate;
+      background: linear-gradient(180deg, var(--glass-top), rgba(255, 255, 255, 0) 46%), var(--glass);
+      border: 1px solid var(--glass-brd);
+      border-radius: 20px;
+      box-shadow: var(--glass-shadow), var(--glass-hi);
+      -webkit-backdrop-filter: blur(22px) saturate(1.6); backdrop-filter: blur(22px) saturate(1.6);
+      padding: 18px 20px; margin-bottom: 14px;
+    }
+    .card::before {
+      content: ""; position: absolute; inset: 0; border-radius: inherit; z-index: -1; pointer-events: none;
+      background:
+        radial-gradient(120% 72% at 6% -12%, rgba(255, 255, 255, .80), rgba(255, 255, 255, 0) 56%),
+        linear-gradient(135deg, rgba(255, 255, 255, .34), rgba(255, 255, 255, 0) 46%);
+    }
+    @media (prefers-color-scheme: dark) {
+      .card::before {
+        background:
+          radial-gradient(120% 72% at 6% -12%, rgba(255, 255, 255, .16), rgba(255, 255, 255, 0) 58%),
+          linear-gradient(135deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, 0) 46%);
+      }
+    }
+    .card-title {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 13px; font-weight: 650; letter-spacing: -.005em; margin: 0 0 16px;
+    }
+    .card-title::before {
+      content: ""; width: 3px; height: 12px; border-radius: 2px;
+      background: linear-gradient(180deg, #6f9bff, var(--brand));
+      box-shadow: 0 0 8px rgba(47, 98, 230, .35);
+    }
+
+    .field { margin-bottom: 16px; }
+    .field:last-child { margin-bottom: 0; }
+    label { display: block; font-size: 12.5px; font-weight: 600; color: var(--ink-2); margin-bottom: 7px; }
+    input, select {
+      width: 100%; height: 40px; padding: 0 12px;
+      border: 1px solid var(--glass-brd); border-radius: 12px;
+      font: inherit; font-size: 13.5px; color: var(--ink);
+      background-color: var(--glass-strong);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5);
+      transition: border-color .15s ease, box-shadow .15s ease;
+    }
+    @media (prefers-color-scheme: dark) { input, select { box-shadow: none; } }
+    select {
+      padding-right: 34px; appearance: none;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7486' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
+      background-repeat: no-repeat; background-position: right 12px center;
+    }
+    input:hover, select:hover { border-color: var(--line-strong); }
+    input:focus, select:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+    .note { font-size: 12px; color: var(--ink-3); margin-top: 6px; line-height: 1.65; }
+
+    .btn {
+      position: relative; overflow: hidden;
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      min-height: 36px; padding: 0 16px; border-radius: 12px;
+      border: 1px solid transparent; font: inherit; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: background .16s ease, border-color .16s ease, box-shadow .16s ease, transform .12s ease, color .16s ease;
+    }
+    .btn:active { transform: scale(.985); }
+    .btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+    .btn.primary {
+      background: linear-gradient(180deg, rgba(255, 255, 255, .30), rgba(255, 255, 255, .02) 55%), var(--brand);
+      color: var(--on-brand); border-color: rgba(255, 255, 255, .22);
+      box-shadow: 0 10px 22px rgba(47, 98, 230, .28), inset 0 1px 0 rgba(255, 255, 255, .45), inset 0 -1px 0 rgba(0, 0, 0, .10);
+    }
+    .btn.primary::after {
+      content: ""; position: absolute; inset: 0; pointer-events: none;
+      background: linear-gradient(115deg, transparent 32%, rgba(255, 255, 255, .38) 46%, transparent 60%);
+      transform: translateX(-130%); transition: transform .55s ease;
+    }
+    .btn.primary:hover { background: linear-gradient(180deg, rgba(255, 255, 255, .30), rgba(255, 255, 255, .02) 55%), var(--brand-strong); }
+    .btn.primary:hover::after { transform: translateX(130%); }
+    .btn.secondary {
+      background: linear-gradient(180deg, rgba(255, 255, 255, .38), rgba(255, 255, 255, .04) 60%), var(--btn-2);
+      border-color: var(--btn-2-brd); color: var(--ink-2); font-weight: 500;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), 0 2px 6px rgba(24, 39, 75, .05);
+      -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    }
+    .btn.secondary:hover { background: var(--glass-strong); color: var(--ink); }
+    @media (prefers-color-scheme: dark) { .btn.secondary { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1); } }
+    .btn:disabled { cursor: default; transform: none; }
+
+    .test-row { display: flex; align-items: center; gap: 12px; margin-top: 4px; flex-wrap: wrap; }
+    #result { font-size: 12.5px; color: var(--ink-3); }
+    #result.ok { color: var(--ok); }
+    #result.err { color: var(--err); }
+
+    .seg {
+      display: flex; width: 100%; padding: 3px; gap: 2px;
+      background: var(--seg-track); border: 1px solid var(--glass-brd); border-radius: 13px;
+      box-shadow: inset 0 1px 2px rgba(16, 24, 40, .06);
+    }
+    .seg-btn {
+      flex: 1; height: 32px; border: none; border-radius: 10px; background: transparent;
+      color: var(--ink-3); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
+      transition: background .18s ease, color .18s ease, box-shadow .18s ease;
+    }
+    .seg-btn:hover { color: var(--ink); }
+    .seg-btn.is-active {
+      background: var(--seg-thumb); color: var(--ink); font-weight: 600;
+      box-shadow: 0 2px 6px rgba(24, 39, 75, .12), inset 0 1px 0 rgba(255, 255, 255, .9);
+    }
+    @media (prefers-color-scheme: dark) { .seg-btn.is-active { box-shadow: 0 2px 6px rgba(0, 0, 0, .3), inset 0 1px 0 rgba(255, 255, 255, .16); } }
+    .seg-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+
+    .site-add { display: flex; gap: 8px; }
+    .site-add input { flex: 1; }
+    .site-list { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-direction: column; gap: 6px; }
+    .site-list li {
+      display: flex; align-items: center; gap: 12px; padding: 9px 12px;
+      border: 1px solid var(--glass-brd); border-radius: 12px;
+      background: rgba(255, 255, 255, .22);
+      transition: background .15s ease, border-color .15s ease;
+    }
+    @media (prefers-color-scheme: dark) { .site-list li { background: rgba(255, 255, 255, .04); } }
+    .site-list li:hover { background: var(--glass-strong); border-color: var(--line-strong); }
+    .site-list .host { flex: 1; font-size: 13px; font-weight: 500; word-break: break-all; }
+    .site-list label { display: inline-flex; align-items: center; gap: 5px; margin: 0; font-size: 12px; font-weight: 500; color: var(--ink-3); cursor: pointer; white-space: nowrap; }
+    .site-list input[type=checkbox] { width: 14px; height: 14px; margin: 0; accent-color: var(--brand); }
+    .site-list .del {
+      background: transparent; border: none; color: var(--ink-3); font: inherit; font-size: 12px;
+      padding: 4px 7px; border-radius: 8px; cursor: pointer; transition: background .15s ease, color .15s ease;
+    }
+    .site-list .del:hover { background: var(--danger-soft); color: var(--danger); }
+
+    .help {
+      background: linear-gradient(180deg, var(--glass-top), rgba(255, 255, 255, 0) 46%), rgba(255, 255, 255, .30);
+      border-color: var(--glass-brd); box-shadow: var(--glass-hi); padding: 16px 20px;
+    }
+    @media (prefers-color-scheme: dark) { .help { background: rgba(255, 255, 255, .04); } }
+    .help b { display: block; font-size: 12.5px; font-weight: 650; margin-bottom: 6px; }
+    .help ul { margin: 0; padding-left: 18px; }
+    .help li { font-size: 12.5px; color: var(--ink-2); line-height: 1.8; }
+
+    .actions {
+      position: sticky; bottom: 16px; z-index: 10;
+      display: flex; align-items: center; gap: 10px;
+      margin-top: 18px; padding: 10px 12px 10px 16px;
+      background: linear-gradient(180deg, var(--glass-top), rgba(255, 255, 255, 0) 50%), var(--glass-strong);
+      border: 1px solid var(--glass-brd); border-radius: 16px;
+      box-shadow: 0 18px 40px rgba(24, 39, 75, .16), 0 2px 6px rgba(24, 39, 75, .08), var(--glass-hi);
+      -webkit-backdrop-filter: blur(26px) saturate(1.8); backdrop-filter: blur(26px) saturate(1.8);
+    }
+    .actions .spacer { flex: 1; }
+    #saved { color: var(--ok); font-size: 12.5px; font-weight: 500; }
+
+    @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+      .card, .actions, .help { background: rgba(255, 255, 255, .95); }
+    }
+    @media (prefers-color-scheme: dark) {
+      @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+        .card, .actions, .help { background: rgba(28, 32, 42, .96); }
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
     }
   </style>
 </head>
 <body>
-  <h1 data-i18n="opt.title">AI 页面翻译 · 设置</h1>
-
-  <h2 class="section" data-i18n="opt.section.api">API 连接</h2>
-  <div class="field">
-    <label for="baseUrl" data-i18n="opt.baseUrl.label">API 地址（OpenAI 兼容端点根）</label>
-    <input id="baseUrl" placeholder="https://api.deepseek.com">
-    <div class="note" data-i18n="opt.baseUrl.note">支持任何 OpenAI 兼容 API。⚠️ 改非 DeepSeek 域名时，Key 会随请求发给该域名，只填可信服务商。</div>
-  </div>
-  <div class="field">
-    <label for="apiKey" data-i18n="opt.apiKey.label">API Key</label>
-    <input id="apiKey" type="password" placeholder="sk-…" autocomplete="off">
-    <div class="note" data-i18n="opt.apiKey.note">只存本机浏览器。建议建专用 Key + 设置额度上限，泄漏可随时吊销。</div>
-  </div>
-  <div class="field">
-    <label for="model" data-i18n="opt.model.label">模型</label>
-    <input id="model" placeholder="deepseek-chat">
-    <div class="note" data-i18n="opt.model.note">默认 deepseek-v4-flash（已自动关思考模式，快且稳）。</div>
+  <div class="aurora" aria-hidden="true"><i class="b1"></i><i class="b2"></i><i class="b3"></i><i class="b4"></i><i class="b5"></i></div>
+<div class="page">
+  <div class="page-head">
+    <span class="mark" aria-hidden="true">译</span>
+    <h1 data-i18n="opt.title">AI 页面翻译 · 设置</h1>
   </div>
 
-  <h2 class="section" data-i18n="opt.section.pref">翻译偏好</h2>
-  <div class="field">
-    <label for="targetLang" data-i18n="opt.targetLang.label">默认目标语言</label>
-    <select id="targetLang"></select>
-  </div>
-  <div class="field">
-    <label data-i18n="opt.displayMode.label">显示模式</label>
-    <div class="seg" id="displayModeSeg" role="radiogroup">
-      <button type="button" class="seg-btn is-active" data-mode="replace" role="radio" aria-checked="true" data-i18n="opt.displayMode.replace">替换原文</button>
-      <button type="button" class="seg-btn" data-mode="bilingual" role="radio" aria-checked="false" data-i18n="opt.displayMode.bilingual">双语对照</button>
+  <section class="card">
+    <h2 class="card-title" data-i18n="opt.section.api">API 连接</h2>
+    <div class="field">
+      <label for="baseUrl" data-i18n="opt.baseUrl.label">API 地址（OpenAI 兼容）</label>
+      <input id="baseUrl" placeholder="https://api.deepseek.com">
+      <div class="note" data-i18n="opt.baseUrl.note">换成非 DeepSeek 域名时，Key 会发给那个服务商。</div>
     </div>
-  </div>
+    <div class="field">
+      <label for="apiKey" data-i18n="opt.apiKey.label">API Key</label>
+      <input id="apiKey" type="password" placeholder="sk-…" autocomplete="off">
+      <div class="note" data-i18n="opt.apiKey.note">只保存在本机。</div>
+    </div>
+    <div class="field">
+      <label for="model" data-i18n="opt.model.label">模型</label>
+      <input id="model" placeholder="deepseek-v4-flash">
+    </div>
+    <div class="test-row">
+      <button class="btn secondary" id="testBtn" data-i18n="opt.test">测试连接</button>
+      <span id="result"></span>
+    </div>
+  </section>
 
-  <h2 class="section" data-i18n="opt.section.ui">界面语言</h2>
-  <div class="field">
-    <label for="displayLang" data-i18n="opt.displayLang.label">显示语言（插件界面文字）</label>
-    <select id="displayLang"></select>
-    <div class="note" data-i18n="opt.displayLang.note">切换插件按钮、说明、横幅等文字的语言，不影响翻译目标。</div>
-  </div>
+  <section class="card">
+    <h2 class="card-title" data-i18n="opt.section.pref">翻译偏好</h2>
+    <div class="field">
+      <label for="targetLang" data-i18n="opt.targetLang.label">默认目标语言</label>
+      <select id="targetLang"></select>
+    </div>
+    <div class="field">
+      <label data-i18n="opt.displayMode.label">显示模式</label>
+      <div class="seg" id="displayModeSeg" role="radiogroup">
+        <button type="button" class="seg-btn is-active" data-mode="replace" role="radio" aria-checked="true" data-i18n="opt.displayMode.replace">替换原文</button>
+        <button type="button" class="seg-btn" data-mode="bilingual" role="radio" aria-checked="false" data-i18n="opt.displayMode.bilingual">双语对照</button>
+      </div>
+    </div>
+  </section>
 
-  <button class="secondary" id="testBtn" data-i18n="opt.test">测试连接</button>
+  <section class="card">
+    <h2 class="card-title" data-i18n="opt.section.ui">界面语言</h2>
+    <div class="field">
+      <label for="displayLang" data-i18n="opt.displayLang.label">显示语言（插件界面文字）</label>
+      <select id="displayLang"></select>
+      <div class="note" data-i18n="opt.displayLang.note">只改插件界面，不影响翻译语言。</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2 class="card-title" data-i18n="opt.section.site">站点设置</h2>
+    <div class="site-add">
+      <input id="newSite" placeholder="example.com" data-i18n-ph="opt.site.addPh">
+      <button class="btn secondary" id="addSiteBtn" data-i18n="opt.site.add">添加</button>
+    </div>
+    <ul id="siteList" class="site-list"></ul>
+    <div class="note" data-i18n="opt.site.note">优先于全局设置；子域名跟随上级。</div>
+  </section>
+
+  <section class="card help">
+    <b data-i18n="opt.help.title">说明</b>
+    <ul>
+      <li data-i18n="opt.help.1">翻译走你自己的 API，费用由服务商收取。</li>
+      <li data-i18n="opt.help.3">已翻译的页面换目标语言会自动重翻。</li>
+      <li data-i18n="opt.help.4">代码块和输入框不翻。</li>
+    </ul>
+  </section>
 
   <div class="actions" id="actionBar" style="display:none">
-    <button class="primary" id="saveBtn" data-i18n="opt.save">保存</button>
-    <button class="secondary" id="cancelBtn" data-i18n="opt.cancel">取消</button>
-    <span id="saved" style="color:#188038;display:none" data-i18n="opt.saved">✓ 已保存</span>
+    <span id="saved" style="display:none" data-i18n="opt.saved">✓ 已保存</span>
+    <span class="spacer"></span>
+    <button class="btn secondary" id="cancelBtn" data-i18n="opt.cancel">取消</button>
+    <button class="btn primary" id="saveBtn" data-i18n="opt.save">保存</button>
   </div>
-  <div id="result"></div>
+</div>
 
-  <h2 class="section" data-i18n="opt.section.site">站点设置</h2>
-  <div style="display:flex;gap:8px;margin-bottom:10px;">
-    <input id="newSite" placeholder="example.com" data-i18n-ph="opt.site.addPh" style="flex:1">
-    <button class="secondary" id="addSiteBtn" data-i18n="opt.site.add">添加</button>
-  </div>
-  <ul id="siteList" class="site-list"></ul>
-  <div class="note" data-i18n="opt.site.note">给指定域名设置"自动翻译/永不翻译"，优先级高于全局；子域名自动匹配上级。</div>
-
-  <div class="box">
-    <b data-i18n="opt.help.title">说明</b><br>
-    <span data-i18n="opt.help.1">· 翻译调用你填的 API，按你的账户计费。DeepSeek 很便宜，普通网页一次约几分钱。</span><br>
-    <span data-i18n="opt.help.2">· 非 DeepSeek 域名保存时会弹授权请求。</span><br>
-    <span data-i18n="opt.help.3">· 弹窗/横幅切"目标语言"实时生效；已翻页切语言自动重翻。</span><br>
-    <span data-i18n="opt.help.4">· 代码块、输入框、按钮内文字默认不翻译。</span>
-  </div>
-
-  <script src="config.js"></script>
-  <script src="options.js"></script>
+<script src="config.js"></script>
+<script src="options.js"></script>
 </body>
 </html>

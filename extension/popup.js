@@ -120,19 +120,19 @@ function queryTab() {
 // 弹窗轮询(reflectStatus)与内容脚本推送(onMessage)共用。
 function renderStatus(s) {
   if (s.translating) {
-    setStatus(AITR.t('pop.translating', { n: s.done || 0, m: s.total || 0 }));
+    setStatus(AITR.t('pop.translating', { n: s.done || 0, m: s.total || 0 }), false, 'is-busy');
     $('translateBtn').disabled = true;
     $('retranslateBtn').disabled = true;
     $('retryFailedBtn').style.display = 'none';
     $('restoreBtn').disabled = false;
   } else if (s.translated) {
-    setStatus(AITR.t('pop.done', { lang: AITR.langName(s.target) || '' }) + (s.errors ? AITR.t('pop.failed', { n: s.errors }) : ''));
+    setStatus(AITR.t('pop.done', { lang: AITR.langName(s.target) || '' }) + (s.errors ? AITR.t('pop.failed', { n: s.errors }) : ''), false, s.errors > 0 ? 'is-warn' : 'is-ok');
     $('translateBtn').disabled = false;
     $('retranslateBtn').disabled = false;
     $('retryFailedBtn').style.display = (s.failedCount > 0 && s.hasKey) ? 'block' : 'none';
     $('restoreBtn').disabled = false;
   } else {
-    setStatus(s.detected ? AITR.t('pop.detectedForeign') : AITR.t('pop.notTranslated'));
+    setStatus(s.detected ? AITR.t('pop.detectedForeign') : AITR.t('pop.notTranslated'), false, 'is-idle');
     $('translateBtn').disabled = false;
     $('retranslateBtn').disabled = true;
     $('retryFailedBtn').style.display = 'none';
@@ -147,10 +147,10 @@ function reflectStatus(s) {
   renderStatus(s);
 }
 
-function setStatus(text, isErr) {
+function setStatus(text, isErr, state) {
   const el = $('status');
   el.textContent = text;
-  el.className = 'status' + (isErr ? ' err' : '');
+  el.className = 'status' + (isErr ? ' is-err' : '') + (state ? ' ' + state : '');
 }
 
 // 弹窗进度条（节点级百分比）
@@ -169,7 +169,7 @@ function bindEvents() {
   $('translateBtn').addEventListener('click', function () {
     if (!tabId) return;
     chrome.tabs.sendMessage(tabId, { type: 'aitr-translate' }).catch(function () {});
-    setStatus(AITR.t('pop.translating', { n: 0, m: 0 }));
+    setStatus(AITR.t('pop.translating', { n: 0, m: 0 }), false, 'is-busy');
   });
   $('restoreBtn').addEventListener('click', function () {
     if (!tabId) return;
@@ -178,12 +178,12 @@ function bindEvents() {
   $('retranslateBtn').addEventListener('click', function () {
     if (!tabId) return;
     chrome.tabs.sendMessage(tabId, { type: 'aitr-retranslate' }).catch(function () {});
-    setStatus(AITR.t('pop.retranslating'));
+    setStatus(AITR.t('pop.retranslating'), false, 'is-busy');
   });
   $('retryFailedBtn').addEventListener('click', function () {
     if (!tabId) return;
     chrome.tabs.sendMessage(tabId, { type: 'aitr-retry-failed' }).catch(function () {});
-    setStatus('重试失败段落中…');
+    setStatus('重试失败段落中…', false, 'is-busy');
   });
   $('lang').addEventListener('change', function () {
     cfg.targetLang = this.value;
